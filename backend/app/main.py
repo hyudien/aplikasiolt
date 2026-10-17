@@ -175,7 +175,7 @@ class TestConnectionRequest(ProfileRequest):
 
 
 class RegisterRequest(BaseModel):
-    pon: str = Field(pattern=r"^\d+/\d+/\d+$")
+    pon: str = Field(max_length=11, pattern=r"^[0-9]{1,3}/[0-9]{1,3}/[0-9]{1,3}$")
     serial: str = Field(pattern=r"^[A-Za-z0-9]{8,16}$")
     name: str = Field(min_length=1, max_length=64)
     vlan: int = Field(ge=1, le=4094)
@@ -327,7 +327,7 @@ async def list_pons(_user: str = Depends(current_user)):
 
 @app.get("/api/olt/pons/{pon:path}")
 async def pon_detail(pon: str, _user: str = Depends(current_user)):
-    if not re.fullmatch(r"\d+/\d+/\d+", pon):
+    if len(pon) > 11 or not re.fullmatch(r"[0-9]{1,3}/[0-9]{1,3}/[0-9]{1,3}", pon):
         raise HTTPException(422, "Format PON tidak valid")
     onts = await adapter.all_onts() if DEMO_MODE else load_onts()
     return {"pon": pon, "onts": [ont for ont in onts if ont["pon"] == pon]}
@@ -474,7 +474,9 @@ async def save_config(payload: ActionRequest, user: str = Depends(current_user))
 
 @app.post("/api/sync")
 async def sync_data(scope: str = "full", user: str = Depends(current_user)):
-    if scope != "full" and not re.fullmatch(r"\d+/\d+/\d+", scope):
+    if scope != "full" and (
+        len(scope) > 11 or not re.fullmatch(r"[0-9]{1,3}/[0-9]{1,3}/[0-9]{1,3}", scope)
+    ):
         raise HTTPException(422, "Gunakan scope=full atau nomor PON seperti 1/1/1")
     started = datetime.now(timezone.utc).isoformat()
     with connect_db() as db:
