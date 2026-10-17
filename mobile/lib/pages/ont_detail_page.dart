@@ -57,6 +57,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
       values[field] = field == 'vlan' ? int.tryParse(value) : value.trim();
     }
     if (confirm) {
+      if (!mounted) return;
       final accepted = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(

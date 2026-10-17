@@ -132,9 +132,9 @@ class _SettingsPageState extends State<SettingsPage> {
               try {
                 await ApiClient.instance.post('/api/olt/profiles/${item['id']}/select');
                 await _loadProfiles();
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profil ${item['name']} dipilih.')));
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Profil ${item['name']} dipilih.')));
               } catch (error) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
               }
             },
           );

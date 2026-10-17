@@ -47,7 +47,7 @@ class ApiClient {
   Future<Map<String, String>> _headers() async {
     _token ??= await _storage.read(key: 'token');
     if (_token == null) throw ApiException('Silakan login kembali.');
-    return {'Authorization': 'Bearer ' + _token!, 'Content-Type': 'application/json'};
+    return {'Authorization': 'Bearer ${_token!}', 'Content-Type': 'application/json'};
   }
 
   Future<dynamic> get(String path) async {
