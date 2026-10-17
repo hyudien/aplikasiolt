@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OLT Control</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f2f4f7;color:#222}
+header{background:#0b5ed7;color:#fff;padding:12px 16px;font-weight:600}
+nav{display:flex;overflow-x:auto;background:#fff;border-bottom:1px solid #ddd;position:sticky;top:0}
+nav button{flex:1;min-width:80px;padding:12px 8px;border:0;background:none;font-size:15px}
+nav button.on{border-bottom:3px solid #0b5ed7;font-weight:600}
+main{padding:12px;max-width:640px;margin:auto}section{display:none}section.on{display:block}
+.card{background:#fff;border-radius:10px;padding:12px;margin:8px 0;box-shadow:0 1px 2px #0002}
+input,select{width:100%;padding:12px;margin:4px 0 8px;border:1px solid #bbb;border-radius:8px;font-size:16px}
+button.b{padding:12px 14px;border:0;border-radius:8px;background:#0b5ed7;color:#fff;font-size:15px;margin:3px 3px 3px 0}
+button.b.red{background:#c62828}button.b.gray{background:#666}
+.pons{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.pon{padding:12px;border-radius:10px;border:0;background:#fff;text-align:left;box-shadow:0 1px 2px #0002;font-size:14px}
+.pon.bad{border-left:5px solid #c62828}.pon.ok{border-left:5px solid #2e7d32}
+.problem{border-left:5px solid #c62828;background:#fdecea}.muted{color:#666;font-size:13px}
+#msg{position:fixed;bottom:0;left:0;right:0;padding:12px;color:#fff;display:none}
+</style></head><body>
+<header>OLT Control – ZTE C320</header>
+<nav id="nav"></nav>
+<main>
+<section id="s-conn">
+ <div class="card"><label>IP OLT<input id="host" inputmode="decimal"></label>
+ <label>Port<input id="port" type="number" value="23"></label>
+ <label>Username<input id="user" autocomplete="off"></label>
+ <label>Password<input id="pass" type="password" autocomplete="off"></label>
+ <label>API token (opsional)<input id="tok" type="password" onchange="sessionStorage.setItem('tok',this.value)"></label>
+ <button class="b" onclick="saveConn()">Simpan</button><button class="b gray" onclick="testConn()">Tes koneksi</button>
+ <div id="connres" class="muted"></div></div>
+ <div class="card"><button class="b" onclick="act('/api/save','POST','Simpan config ke OLT?')">Save config</button>
+ <button class="b gray" onclick="sync()">Sync DB</button></div>
+</section>
+<section id="s-status"><button class="b" onclick="loadStatus()">Refresh</button><div id="total" class="card"></div>
+ <div id="pons" class="pons"></div><h3 id="ponTitle"></h3><div id="ponOnts"></div></section>
+<section id="s-search"><input id="q" placeholder="Nama / SN / username PPPoE" oninput="doSearch()"><div id="results"></div></section>
+<section id="s-reg"><div class="card">
+ <label>PON (1/1/1)<input id="r_pon"></label><label>ONU ID<input id="r_id" type="number"></label>
+ <label>Serial number<input id="r_sn"></label><label>Tipe ONT<input id="r_type" value="ZTE-F660"></label>
+ <label>Nama pelanggan (tanpa spasi)<input id="r_name"></label>
+ <label>Mode<select id="r_mode"><option value="pppoe">PPPoE</option><option value="bridge">Bridge</option><option value="hybrid">Hybrid (keduanya)</option></select></label>
+ <label>Paket (profile)<input id="r_pkg"></label><label>VLAN<input id="r_vlan" type="number"></label>
+ <label>PPPoE username<input id="r_pu"></label><label>PPPoE password<input id="r_pp" type="password"></label>
+ <button class="b" onclick="register()">Registrasi</button></div></section>
+</main><div id="msg"></div>
+<script>
+const $=id=>document.getElementById(id);
+const tabs={conn:'Koneksi',status:'Status',search:'Cari',reg:'Registrasi'};
+for(const k in tabs){const b=document.createElement('button');b.textContent=tabs[k];b.onclick=()=>show(k);b.id='t-'+k;$('nav').append(b)}
+function show(k){for(const x in tabs){$('s-'+x).classList.toggle('on',x==k);$('t-'+x).classList.toggle('on',x==k)}if(k=='status')loadStatus()}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function toast(t,ok=true){const m=$('msg');m.textContent=t;m.style.background=ok?'#2e7d32':'#c62828';m.style.display='block';setTimeout(()=>m.style.display='none',4000)}
+async function api(path,method='GET',body){
+ const r=await fetch(path,{method,headers:{'Content-Type':'application/json','X-API-Token':sessionStorage.getItem('tok')||''},body:body?JSON.stringify(body):undefined});
+ const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail&&j.detail.map?j.detail.map(d=>d.msg).join(', '):(j.detail||r.statusText));return j}
+async function run(fn){try{return await fn()}catch(e){toast(e.message,false)}}
+const q=o=>'?ont='+encodeURIComponent(o);
+async function loadSettings(){const s=await api('/api/settings');if(s.configured){$('host').value=s.host;$('port').value=s.port;$('user').value=s.username}}
+const conn=()=>({host:$('host').value,port:+$('port').value,username:$('user').value,password:$('pass').value});
+function saveConn(){run(async()=>{await api('/api/settings','PUT',conn());toast('Tersimpan')})}
+function testConn(){run(async()=>{const r=await api('/api/connection/test','POST',conn());
+ $('connres').textContent=(r.connected?'✅ Terhubung: ':'❌ Gagal: ')+r.message;toast(r.message,r.connected)})}
+function loadStatus(){run(async()=>{const s=await api('/api/status');
+ $('total').innerHTML=`<b>${s.connected}</b> ONT terkoneksi dari ${s.total}${s.problems?` · <span style="color:#c62828">${s.problems} bermasalah</span>`:''}`;
+ $('pons').innerHTML=s.pons.map(p=>`<button class="pon ${p.problems?'bad':'ok'}" onclick="loadPon('${esc(p.pon)}')"><b>PON ${esc(p.pon)}</b><br>${p.connected}/${p.total} online${p.problems?`<br>⚠ ${p.problems} masalah`:''}</button>`).join('')})}
+function loadPon(p){run(async()=>{const r=await api('/api/onts?pon='+encodeURIComponent(p));$('ponTitle').textContent='PON '+p;
+ $('ponOnts').innerHTML=r.onts.map(o=>card(o)).join('')||'<p class="muted">Kosong</p>'})}
+function card(o,actions){return `<div class="card ${o.problem?'problem':''}"><b>${esc(o.name||o.sn||o.ont)}</b> <span class="muted">${esc(o.ont)}</span><br>
+ <span class="muted">SN ${esc(o.sn)} · PPPoE ${esc(o.pppoe_user)} · ${esc(o.phase)}</span>${actions?actionsHtml(o):''}</div>`}
+function actionsHtml(o){const k=esc(o.ont);return `<div>
+ <button class="b" onclick="atten('${k}')">Redaman</button>
+ <button class="b" onclick="pkg('${k}')">Paket</button><button class="b" onclick="vlan('${k}')">VLAN</button>
+ <button class="b" onclick="pppoe('${k}')">PPPoE</button><button class="b gray" onclick="repl('${k}')">Ganti ONT</button>
+ <button class="b gray" onclick="remote('${k}',true)">Remote ON</button><button class="b gray" onclick="remote('${k}',false)">Remote OFF</button>
+ <button class="b gray" onclick="act('/api/ont/reboot'+q('${k}'),'POST','Reboot ONT ${k}?')">Reboot</button>
+ <button class="b red" onclick="act('/api/ont'+q('${k}'),'DELETE','HAPUS ONT ${k}?').then(doSearch)">Hapus</button></div>`}
+let st;function doSearch(){clearTimeout(st);st=setTimeout(()=>run(async()=>{const v=$('q').value.trim();if(!v){$('results').innerHTML='';return}
+ const r=await api('/api/search?q='+encodeURIComponent(v));$('results').innerHTML=r.results.map(o=>card(o,true)).join('')||'<p class="muted">Tidak ditemukan (sudah Sync DB?)</p>'}),250)}
+async function act(url,method,confirmMsg,body){if(confirmMsg&&!confirm(confirmMsg))return;return run(async()=>{await api(url,method,body);toast('Berhasil')})}
+function sync(){run(async()=>{toast('Sinkronisasi...');const r=await api('/api/sync','POST');toast(r.synced+' ONT disinkronkan')})}
+function atten(o){run(async()=>{const r=await api('/api/ont/attenuation'+q(o));alert(`Rx: ${r.rx_power_dbm??'-'} dBm\nTx: ${r.tx_power_dbm??'-'} dBm\nRedaman: ${r.attenuation_db??'-'} dB\n\n${r.raw}`)})}
+function pkg(o){const v=prompt('Profile paket baru');if(v)act('/api/ont/package'+q(o),'POST',null,{package:v})}
+function vlan(o){const v=prompt('VLAN baru');if(v)act('/api/ont/vlan'+q(o),'POST',null,{vlan:+v})}
+function pppoe(o){const u=prompt('Username PPPoE');const p=u&&prompt('Password PPPoE');const v=p&&prompt('VLAN');if(v)act('/api/ont/pppoe'+q(o),'POST',null,{username:u,password:p,vlan:+v})}
+function repl(o){const v=prompt('SN ONT baru');if(v)act('/api/ont/replace'+q(o),'POST','Ganti ONT?',{new_sn:v})}
+function remote(o,e){act('/api/ont/remote'+q(o),'POST',(e?'Aktifkan':'Nonaktifkan')+' remote ONT?',{enabled:e})}
+function register(){const g=i=>$(i).value;act('/api/register','POST','Registrasi ONT baru?',{pon:g('r_pon'),onu_id:+g('r_id'),sn:g('r_sn'),onu_type:g('r_type'),
+ name:g('r_name'),mode:g('r_mode'),package:g('r_pkg'),vlan:+g('r_vlan'),pppoe_user:g('r_pu')||null,pppoe_pass:g('r_pp')||null})}
+show('conn');loadSettings();
+</script></body></html>
