@@ -19,10 +19,21 @@ class ZteC320Adapter(OltAdapter):
     async def _connect(self):
         if self.reader is not None:
             return
-        self.reader, self.writer = await asyncio.wait_for(
-            telnetlib3.open_connection(host=self.host, port=self.port, connect_minwait=0.1, connect_maxwait=1),
-            timeout=self.timeout,
-        )
+        last_error = None
+        for attempt in range(2):
+            try:
+                self.reader, self.writer = await asyncio.wait_for(
+                    telnetlib3.open_connection(host=self.host, port=self.port, connect_minwait=0.1, connect_maxwait=1),
+                    timeout=self.timeout,
+                )
+                break
+            except (TimeoutError, ConnectionError, OSError) as exc:
+                last_error = exc
+                await self.close()
+                if attempt == 1:
+                    raise
+        if self.reader is None or self.writer is None:
+            raise last_error or ConnectionError("Koneksi Telnet gagal")
         await self._read_until_prompt()
         self.writer.write(self.username + "\n")
         await self._read_until_prompt()
@@ -40,9 +51,11 @@ class ZteC320Adapter(OltAdapter):
             chunk = await asyncio.wait_for(self.reader.read(4096), timeout=self.timeout)
             if not chunk:
                 break
+            if "--More--" in chunk and self.writer is not None:
+                self.writer.write(" ")
             result += chunk.replace("--More--", "")
             lines = result.rstrip().splitlines()
-            if lines and lines[-1].strip().endswith(("#", ">")):
+            if lines and lines[-1].strip().endswith(("#", ">", ":")):
                 break
         return result
 

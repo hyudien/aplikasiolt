@@ -39,6 +39,7 @@ fernet = Fernet(_fernet_key.encode())
 bearer = HTTPBearer(auto_error=False)
 adapter = create_adapter()
 olt_lock = asyncio.Lock()
+active_profile_id: int | None = None
 
 
 def connect_db():
@@ -55,7 +56,8 @@ def initialize_db():
         db.executescript("""
         CREATE TABLE IF NOT EXISTS olt_connections (
             id INTEGER PRIMARY KEY, name TEXT NOT NULL, ip TEXT NOT NULL, port INTEGER NOT NULL,
-            username TEXT NOT NULL, password_encrypted TEXT NOT NULL, created_at TEXT NOT NULL
+            username TEXT NOT NULL, password_encrypted TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS pons (
             pon TEXT PRIMARY KEY, total INTEGER NOT NULL DEFAULT 0, online INTEGER NOT NULL DEFAULT 0,
@@ -76,6 +78,19 @@ def initialize_db():
             started_at TEXT NOT NULL, finished_at TEXT
         );
         """)
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(olt_connections)")}
+        if "active" not in columns:
+            db.execute("ALTER TABLE olt_connections ADD COLUMN active INTEGER NOT NULL DEFAULT 0")
+        selected = db.execute("SELECT * FROM olt_connections WHERE active=1 ORDER BY id DESC LIMIT 1").fetchone()
+    if selected is not None:
+        global adapter, active_profile_id
+        active_profile_id = selected["id"]
+        if not DEMO_MODE:
+            adapter = create_adapter({
+                "OLT_MODE": "zte", "OLT_HOST": selected["ip"], "OLT_PORT": str(selected["port"]),
+                "OLT_USERNAME": selected["username"],
+                "OLT_PASSWORD": fernet.decrypt(selected["password_encrypted"].encode()).decode(),
+            })
 
 
 @asynccontextmanager
@@ -121,7 +136,7 @@ def password_matches(candidate: str) -> bool:
     if _password_hash == hashlib.pbkdf2_hmac("sha256", b"admin", b"olt-control-mock", 240_000).hex() and DEMO_MODE:
         return hmac.compare_digest(candidate, "admin")
     try:
-        salt, digest = _password_hash.split("$", 1)
+        salt, digest = _password_hash.split(":", 1)
         actual = hashlib.pbkdf2_hmac("sha256", candidate.encode(), bytes.fromhex(salt), 240_000).hex()
         return hmac.compare_digest(actual, digest)
     except (ValueError, TypeError):
@@ -145,6 +160,13 @@ class ProfileRequest(BaseModel):
     def valid_host(cls, value):
         if not re.fullmatch(r"[A-Za-z0-9.:-]+", value):
             raise ValueError("Alamat host tidak valid")
+        return value
+
+    @field_validator("username", "password")
+    @classmethod
+    def valid_login_text(cls, value):
+        if any(char in value for char in "\r\n"):
+            raise ValueError("Kredensial tidak boleh berisi baris baru")
         return value
 
 
@@ -240,8 +262,8 @@ async def test_connection(payload: TestConnectionRequest, _user: str = Depends(c
 @app.get("/api/olt/profiles")
 def list_profiles(_user: str = Depends(current_user)):
     with connect_db() as db:
-        rows = db.execute("SELECT id,name,ip,port,username,created_at FROM olt_connections ORDER BY id").fetchall()
-        return [dict(row) for row in rows]
+        rows = db.execute("SELECT id,name,ip,port,username,active,created_at FROM olt_connections ORDER BY id").fetchall()
+        return [{**dict(row), "selected": row["active"] == 1} for row in rows]
 
 
 @app.post("/api/olt/profiles")
@@ -254,6 +276,29 @@ def save_profile(payload: ProfileRequest, user: str = Depends(current_user)):
         )
     log_action(user, "save-profile", payload.name, "success")
     return {"id": cursor.lastrowid, "name": payload.name}
+
+
+@app.post("/api/olt/profiles/{profile_id}/select")
+async def select_profile(profile_id: int, user: str = Depends(current_user)):
+    global adapter, active_profile_id
+    with connect_db() as db:
+        row = db.execute("SELECT * FROM olt_connections WHERE id=?", (profile_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "Profil OLT tidak ditemukan")
+    async with olt_lock:
+        if not DEMO_MODE:
+            await adapter.close()
+            adapter = create_adapter({
+                "OLT_MODE": "zte", "OLT_HOST": row["ip"], "OLT_PORT": str(row["port"]),
+                "OLT_USERNAME": row["username"],
+                "OLT_PASSWORD": fernet.decrypt(row["password_encrypted"].encode()).decode(),
+            })
+        with connect_db() as db:
+            db.execute("UPDATE olt_connections SET active=0")
+            db.execute("UPDATE olt_connections SET active=1 WHERE id=?", (profile_id,))
+    active_profile_id = profile_id
+    log_action(user, "select-profile", row["name"], "success")
+    return {"success": True, "id": profile_id, "name": row["name"]}
 
 
 @app.get("/api/olt/dashboard")
@@ -280,7 +325,7 @@ async def list_pons(_user: str = Depends(current_user)):
     return (await dashboard(_user))["pons"]
 
 
-@app.get("/api/olt/pons/{pon}")
+@app.get("/api/olt/pons/{pon:path}")
 async def pon_detail(pon: str, _user: str = Depends(current_user)):
     if not re.fullmatch(r"\d+/\d+/\d+", pon):
         raise HTTPException(422, "Format PON tidak valid")
@@ -302,7 +347,21 @@ async def search_onts(q: str = Query(min_length=1, max_length=100), _user: str =
 
 @app.get("/api/onts/unconfigured")
 async def unconfigured(_user: str = Depends(current_user)):
-    return await adapter.unconfigured()
+    candidates = await adapter.unconfigured()
+    registered = await adapter.all_onts() if DEMO_MODE else load_onts()
+    used_ids: dict[str, set[int]] = {}
+    for ont in registered:
+        used_ids.setdefault(ont["pon"], set()).add(ont.get("onu_id"))
+    return [
+        {
+            **candidate,
+            "next_onu_id": next(
+                (onu_id for onu_id in range(1, 129) if onu_id not in used_ids.get(candidate["pon"], set())),
+                None,
+            ),
+        }
+        for candidate in candidates
+    ]
 
 
 @app.get("/api/onts/{interface:path}")
@@ -312,7 +371,10 @@ async def ont_detail(interface: str, _user: str = Depends(current_user)):
 
 @app.get("/api/profiles")
 async def olt_profiles(_user: str = Depends(current_user)):
-    return {"bandwidth": await adapter.profiles_list(), "line": [], "service": []}
+    bandwidth = await adapter.profiles_list()
+    if not bandwidth:
+        bandwidth = [item.strip() for item in os.getenv("BANDWIDTH_PROFILES", "").split(",") if item.strip()]
+    return {"bandwidth": bandwidth, "line": [], "service": []}
 
 
 @app.post("/api/onts/register")
@@ -363,16 +425,24 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
         raise HTTPException(422, "Profile wajib diisi")
     if action == "change-vlan" and payload.vlan is None:
         raise HTTPException(422, "VLAN wajib diisi")
-    if action == "change-pppoe" and not payload.username:
-        raise HTTPException(422, "Username PPPoE wajib diisi")
+    if action == "change-pppoe" and (not payload.username or not payload.password):
+        raise HTTPException(422, "Username dan password PPPoE wajib diisi")
     if action == "replace" and not payload.serial:
         raise HTTPException(422, "SN pengganti wajib diisi")
+    known_onts = await adapter.all_onts() if DEMO_MODE else load_onts()
+    if action == "replace" and any(item["serial"].upper() == payload.serial.upper() for item in known_onts):
+        raise HTTPException(409, "SN pengganti sudah terdaftar")
+    if action == "change-pppoe" and any(item.get("pppoe_user") == payload.username and item["interface"] != interface for item in known_onts):
+        raise HTTPException(409, "Username PPPoE sudah digunakan")
     async with olt_lock:
         if not DEMO_MODE:
             log_action(user, action, interface, "failed", "CLI write belum diimplementasikan")
             raise HTTPException(501, "Aksi tulis CLI belum diaktifkan; validasi perintah pada firmware terlebih dahulu")
         result = await adapter.action(action, ont, payload.model_dump(exclude_none=True))
-        if action != "attenuation":
+        if action == "delete":
+            with connect_db() as db:
+                db.execute("DELETE FROM onts WHERE interface=?", (interface,))
+        elif action != "attenuation":
             with connect_db() as db:
                 db.execute(
                     """INSERT INTO onts(interface,pon,onu_id,serial,name,pppoe_user,status,reason,vlan,profile,mode,optical_power,last_seen)

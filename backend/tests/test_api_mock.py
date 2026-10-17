@@ -15,7 +15,20 @@ def test_mock_auth_dashboard_search_registration_and_audit(tmp_path, monkeypatch
         assert dashboard["total"] == 3
         assert dashboard["online"] == 1
         assert dashboard["los"] == 1
+        assert client.get("/api/olt/pons/1/1/1").status_code == 200
         assert client.get("/api/onts/search?q=pelanggan01").json()[0]["serial"] == "ZTEG00000001"
+        assert client.post(
+            "/api/onts/1/1/1:2/actions/change-pppoe",
+            json={"username": "pelanggan01", "password": "baru"},
+        ).status_code == 409
+        candidate = client.get("/api/onts/unconfigured").json()[0]
+        assert candidate["next_onu_id"] == 3
+        profile = client.post("/api/olt/profiles", json={
+            "name": "OLT Uji", "ip": "192.168.1.2", "port": 23, "username": "teknisi", "password": "sandi-uji",
+        }).json()
+        assert "password" not in client.get("/api/olt/profiles").json()[0]
+        assert client.post(f"/api/olt/profiles/{profile['id']}/select").json()["success"] is True
+        assert client.get("/api/olt/profiles").json()[0]["selected"] is True
 
         payload = {
             "pon": "1/1/1", "serial": "ZTEG00000004", "name": "Uji Registrasi", "vlan": 100,
@@ -29,5 +42,7 @@ def test_mock_auth_dashboard_search_registration_and_audit(tmp_path, monkeypatch
         interface = registered.json()["ont"]["interface"]
         assert client.post(f"/api/onts/{interface}/actions/reboot", json={}).status_code == 422
         assert client.post(f"/api/onts/{interface}/actions/reboot", json={"confirm": True}).status_code == 200
+        assert client.post(f"/api/onts/{interface}/actions/delete", json={"confirm": True}).status_code == 200
+        assert client.get(f"/api/onts/{interface}").status_code == 404
         logs = client.get("/api/logs").json()
-        assert [entry["action"] for entry in logs][:2] == ["reboot", "register"]
+        assert [entry["action"] for entry in logs][:3] == ["delete", "reboot", "register"]
