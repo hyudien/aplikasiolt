@@ -66,7 +66,14 @@ class ZteC320Adapter(OltAdapter):
             return await self._read_until_prompt()
 
     async def all_onts(self) -> list[dict]:
-        return parsers.parse_onu_state(await self.execute(commands.SHOW_ONU_STATE))
+        onts = parsers.parse_onu_state(await self.execute(commands.SHOW_ONU_STATE))
+        if onts:
+            return onts
+        # Fallback firmware C320: daftar ONU per port PON (slot 1, port 1-16).
+        for port in range(1, 17):
+            output = await self.execute(commands.SHOW_ONU_INFORMATION.format(pon=f"1/1/{port}"))
+            onts.extend(parsers.parse_onu_information(output))
+        return onts
 
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))

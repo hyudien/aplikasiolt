@@ -1,4 +1,4 @@
-from app.parsers import parse_onu_state, parse_pon_id, parse_unconfigured
+from app.parsers import parse_onu_information, parse_onu_state, parse_pon_id, parse_unconfigured
 
 
 def test_parse_onu_state_recognizes_statuses_and_ignores_headers():
@@ -27,3 +27,17 @@ def test_parse_pon_id_rejects_invalid_interface():
         assert "tidak valid" in str(error)
     else:
         raise AssertionError("interface tidak valid harus ditolak")
+
+
+def test_parse_onu_information_table():
+    output = """
+ONU        SN report        LLID  ONU ID  Auth  configuration  State    Offline times
+1/1/1:1    ZTEGC0000001     1     1       enable  success      LOS      2
+1/1/1:2    ZTEGC0000002     2     2       enable  success      working  0
+"""
+    result = parse_onu_information(output)
+    assert [o["interface"] for o in result] == ["1/1/1:1", "1/1/1:2"]
+    assert [o["status"] for o in result] == ["los", "online"]
+    assert result[0]["serial"] == "ZTEGC0000001"
+    assert result[1]["onu_id"] == 2 and result[1]["pon"] == "1/1/1"
+    assert parse_onu_information("ONU  SN report  State\nno rows") == []

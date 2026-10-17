@@ -10,6 +10,13 @@ _STATE_ROW = re.compile(
     r"auth\s+fail|unknown)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
+_INFO_ROW = re.compile(r"^\s*(?P<interface>\d+/\d+/\d+:\d+)\s+(?P<rest>.+?)\s*$")
+_INFO_STATE = re.compile(
+    r"\b(?P<state>working|online|offline|los|dying\s*gasp|dyinggasp|"
+    r"auth\s*fail(?:ed)?|unknown)\b",
+    re.IGNORECASE,
+)
+_SERIAL = re.compile(r"^(?:SN:)?(?P<serial>[A-Za-z0-9]{8,16})(?:\(.*\))?$")
 _UNCFIG_ROW = re.compile(
     r"^\s*(?P<interface>\d+/\d+/\d+)\s+(?P<serial>[A-Za-z0-9]{8,16})\s*$",
     re.IGNORECASE,
@@ -44,6 +51,33 @@ def parse_onu_state(output: str) -> list[dict]:
             "pon": pon,
             "onu_id": int(onu_id),
             "serial": match.group("serial"),
+            "status": state,
+            "reason": reason,
+        })
+    return onts
+
+
+def parse_onu_information(output: str) -> list[dict]:
+    """Parse `show pon onu information gpon-olt_x/x/x` (tabel ONU, SN, ID, Auth, State)."""
+    onts = []
+    for line in output.splitlines():
+        match = _INFO_ROW.match(line)
+        if not match:
+            continue
+        rest = match.group("rest")
+        state_match = _INFO_STATE.search(rest)
+        if not state_match:
+            continue
+        interface = match.group("interface")
+        pon, onu_id = interface.split(":")
+        serial_match = _SERIAL.match(rest.split()[0])
+        serial = serial_match.group("serial") if serial_match and not _INFO_STATE.fullmatch(rest.split()[0]) else ""
+        state, reason = normalize_state(re.sub(r"\s+", " ", state_match.group("state")))
+        onts.append({
+            "interface": interface,
+            "pon": pon,
+            "onu_id": int(onu_id),
+            "serial": serial,
             "status": state,
             "reason": reason,
         })

@@ -1,6 +1,7 @@
 """Template perintah ZTE C320; verifikasi pada firmware dan kartu sebelum produksi."""
 
 SHOW_ONU_STATE = "show gpon onu state"
+SHOW_ONU_INFORMATION = "show pon onu information gpon-olt_{pon}"
 SHOW_UNCONFIGURED = "show gpon onu uncfg"
 SHOW_ATTENUATION = "show pon power attenuation {interface}"
 SHOW_DETAIL = "show gpon onu detail-info {interface}"
