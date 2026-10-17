@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a2c">
+  <title>OLT Control — Registrasi ONT</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #18243a;
+      background: #f4f7fb;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, input, select { font: inherit; }
+    .layout { min-height: 100vh; }
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      display: flex;
+      flex-direction: column;
+      width: 250px;
+      padding: 28px 18px;
+      color: #d9e3f5;
+      background: #101a2c;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 38px; }
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      color: #fff;
+      background: #2878ee;
+      font-weight: 800;
+    }
+    .brand strong { display: block; color: #fff; font-size: 15px; }
+    .brand span { color: #91a3bf; font-size: 12px; }
+    .nav-label { padding: 0 10px 10px; color: #71819b; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 9px; color: #cbd7e9; font-size: 13px; }
+    .nav-item.active { color: white; background: #202e45; }
+    .nav-icon { width: 18px; text-align: center; font-size: 16px; }
+    .sidebar-note { margin-top: auto; padding: 15px; border: 1px solid #2b3950; border-radius: 11px; color: #9eacc1; font-size: 12px; line-height: 1.6; }
+    .sidebar-note strong { display: block; margin-bottom: 4px; color: #e3ebf6; font-size: 12px; }
+    main { max-width: 1440px; margin-left: 250px; padding: 34px 42px 56px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 34px; }
+    .eyebrow { margin: 0 0 7px; color: #71819b; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(23px, 3vw, 30px); letter-spacing: -.04em; }
+    .subtitle { margin: 7px 0 0; color: #728099; font-size: 14px; }
+    .connection { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #e0e7f0; border-radius: 20px; color: #64728a; background: #fff; font-size: 12px; white-space: nowrap; }
+    .connection::before { width: 7px; height: 7px; border-radius: 50%; background: #f1a531; content: ""; }
+    .connection.online::before { background: #22ad76; }
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat, .panel { border: 1px solid #e5eaf1; border-radius: 13px; background: #fff; box-shadow: 0 3px 12px rgb(25 45 80 / 3%); }
+    .stat { padding: 18px 20px; }
+    .stat-label { color: #728099; font-size: 12px; }
+    .stat-value { margin-top: 7px; font-size: 25px; font-weight: 700; letter-spacing: -.04em; }
+    .panel { margin-bottom: 22px; }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; padding: 21px 24px 17px; border-bottom: 1px solid #edf0f5; }
+    .panel-heading h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
+    .panel-heading p { margin: 5px 0 0; color: #7c899e; font-size: 12px; }
+    .omci-chip { padding: 6px 9px; border-radius: 20px; color: #126647; background: #e8f7f0; font-size: 11px; font-weight: 700; }
+    form { padding: 22px 24px 24px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    label { display: block; margin-bottom: 7px; color: #344158; font-size: 12px; font-weight: 650; }
+    input, select {
+      width: 100%;
+      height: 42px;
+      padding: 0 12px;
+      border: 1px solid #dce3ec;
+      border-radius: 7px;
+      outline: none;
+      color: #202c40;
+      background: #fff;
+      font-size: 13px;
+    }
+    input:focus, select:focus { border-color: #448cf2; box-shadow: 0 0 0 3px rgb(68 140 242 / 12%); }
+    input::placeholder { color: #a0aabd; }
+    .hint { display: block; margin-top: 6px; color: #8793a7; font-size: 11px; }
+    .omci-setting { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid #dcebe4; border-radius: 9px; background: #f7fcf9; }
+    .omci-setting input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: #16865d; }
+    .omci-setting label { margin: 0; font-size: 12px; }
+    .omci-setting p { margin: 5px 0 0; color: #78889a; font-size: 11px; line-height: 1.5; }
+    .actions { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 21px; }
+    .required-note { color: #8994a7; font-size: 11px; }
+    button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 7px; color: #fff; background: #2878ee; cursor: pointer; font-size: 12px; font-weight: 700; }
+    button:hover { background: #1767d9; }
+    button:disabled { cursor: wait; opacity: .65; }
+    .message { display: none; margin-top: 17px; padding: 11px 13px; border-radius: 7px; font-size: 12px; line-height: 1.5; }
+    .message.visible { display: block; }
+    .message.error { color: #a13f38; background: #fff0ef; }
+    .message.success { color: #126647; background: #eaf8f1; }
+    .history { overflow: hidden; }
+    .history .panel-heading { border-bottom: 0; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+    th { padding: 11px 20px; color: #8490a3; background: #f8f9fb; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    td { padding: 14px 20px; border-top: 1px solid #edf0f5; color: #38465b; font-size: 12px; }
+    td.empty { padding: 25px 20px; color: #8a95a8; text-align: center; }
+    .serial { font-weight: 700; letter-spacing: .04em; }
+    .status { display: inline-block; padding: 5px 8px; border-radius: 15px; color: #126647; background: #e8f7f0; font-size: 10px; font-weight: 700; }
+    @media (max-width: 900px) {
+      .sidebar { position: static; width: auto; height: auto; padding: 13px 18px; }
+      .brand { padding: 0; }
+      .sidebar .nav-label, .sidebar .nav-item, .sidebar-note { display: none; }
+      main { margin: 0; padding: 27px 22px 40px; }
+    }
+    @media (max-width: 600px) {
+      main { padding: 23px 14px 32px; }
+      .topbar { align-items: flex-start; flex-direction: column; margin-bottom: 22px; }
+      .stats { gap: 9px; }
+      .stat { padding: 13px 12px; }
+      .stat-value { font-size: 21px; }
+      .stat-label { font-size: 10px; }
+      .panel-heading, form { padding-right: 16px; padding-left: 16px; }
+      .form-grid { grid-template-columns: 1fr; gap: 15px; }
+      .field.full { grid-column: auto; }
+      .actions { align-items: stretch; flex-direction: column; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" aria-label="Navigasi utama">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">O</div>
+        <div><strong>OLT Control</strong><span>Network management</span></div>
+      </div>
+      <div class="nav-label">MANAJEMEN</div>
+      <div class="nav-item active"><span class="nav-icon" aria-hidden="true">▦</span>Registrasi ONT</div>
+      <div class="sidebar-note"><strong>Integrasi OMCI</strong>Profil OMCI diteruskan ke adapter OLT melalui API. Pastikan adapter dan OLT sudah dikonfigurasi.</div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Provisioning / GPON</p>
+          <h1>Registrasi ONT</h1>
+          <p class="subtitle">Daftarkan ONT dan kirim profil layanan melalui OMCI.</p>
+        </div>
+        <div class="connection" id="connection">API belum diperiksa</div>
+      </header>
+
+      <section class="stats" aria-label="Ringkasan registrasi">
+        <div class="stat"><div class="stat-label">Permintaan berhasil</div><div class="stat-value" id="count-total">0</div></div>
+        <div class="stat"><div class="stat-label">OMCI aktif</div><div class="stat-value" id="count-omci">0</div></div>
+        <div class="stat"><div class="stat-label">API registrasi</div><div class="stat-value" id="api-label">/api/onts</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><h2>Data ONT baru</h2><p>Isi identitas ONT dan profil yang tersedia pada OLT.</p></div>
+          <span class="omci-chip">OMCI SUPPORTED</span>
+        </div>
+        <form id="registration-form">
+          <div class="form-grid">
+            <div class="field">
+              <label for="olt">Nama OLT <span aria-hidden="true">*</span></label>
+              <input id="olt" name="olt" placeholder="Contoh: OLT-Jakarta-01" required maxlength="100">
+            </div>
+            <div class="field">
+              <label for="pon">Port PON <span aria-hidden="true">*</span></label>
+              <input id="pon" name="pon" placeholder="Contoh: 0/1/1" required maxlength="32">
+            </div>
+            <div class="field">
+              <label for="serial">Serial number ONT <span aria-hidden="true">*</span></label>
+              <input id="serial" name="serial" placeholder="Contoh: ALCLB1234567" required maxlength="32" pattern="[A-Za-z0-9_-]+" title="Gunakan huruf, angka, tanda hubung, atau garis bawah">
+              <span class="hint">Gunakan serial number sesuai label perangkat.</span>
+            </div>
+            <div class="field">
+              <label for="ont-id">ONT ID <span aria-hidden="true">*</span></label>
+              <input id="ont-id" name="ontId" type="number" min="1" max="255" placeholder="Contoh: 1" required>
+            </div>
+            <div class="field">
+              <label for="line-profile">Line profile <span aria-hidden="true">*</span></label>
+              <input id="line-profile" name="lineProfile" placeholder="Nama profil line pada OLT" required maxlength="100">
+            </div>
+            <div class="field">
+              <label for="service-profile">Service profile <span aria-hidden="true">*</span></label>
+              <input id="service-profile" name="serviceProfile" placeholder="Nama profil layanan pada OLT" required maxlength="100">
+            </div>
+            <div class="field full">
+              <div class="omci-setting">
+                <input id="omci-enabled" name="omciEnabled" type="checkbox" checked>
+                <div>
+                  <label for="omci-enabled">Aktifkan provisioning OMCI</label>
+                  <p>Adapter OLT harus menerapkan profil line dan layanan melalui OMCI, lalu mengembalikan status provisioning.</p>
+                </div>
+              </div>
+            </div>
+            <div class="field full">
+              <label for="api-endpoint">Endpoint API registrasi</label>
+              <input id="api-endpoint" name="apiEndpoint" value="/api/onts" required maxlength="500" inputmode="url">
+              <span class="hint">Alamat REST API adapter OLT yang menerima permintaan registrasi.</span>
+            </div>
+          </div>
+          <div class="actions">
+            <span class="required-note">* Wajib diisi</span>
+            <button id="submit-button" type="submit">Daftarkan ONT</button>
+          </div>
+          <div class="message" id="message" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+
+      <section class="panel history">
+        <div class="panel-heading">
+          <div><h2>Riwayat permintaan</h2><p>Permintaan yang berhasil diterima oleh API ini pada browser.</p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Serial number</th><th>OLT / Port PON</th><th>ONT ID</th><th>Profil OMCI</th><th>Status API</th></tr></thead>
+            <tbody id="history-body"><tr><td class="empty" colspan="5">Belum ada permintaan registrasi.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const storageKey = "olt-control-ont-history";
+      const endpointKey = "olt-control-ont-endpoint";
+      const form = document.querySelector("#registration-form");
+      const endpointInput = document.querySelector("#api-endpoint");
+      const message = document.querySelector("#message");
+      const submitButton = document.querySelector("#submit-button");
+      const connection = document.querySelector("#connection");
+      const historyBody = document.querySelector("#history-body");
+      let history = readHistory();
+
+      function readHistory() {
+        try {
+          const value = JSON.parse(localStorage.getItem(storageKey) || "[]");
+          return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function renderHistory() {
+        document.querySelector("#count-total").textContent = String(history.length);
+        document.querySelector("#count-omci").textContent = String(history.filter((item) => item.omciEnabled).length);
+        historyBody.replaceChildren();
+        if (!history.length) {
+          const row = historyBody.insertRow();
+          const cell = row.insertCell();
+          cell.colSpan = 5;
+          cell.className = "empty";
+          cell.textContent = "Belum ada permintaan registrasi.";
+          return;
+        }
+
+        history.slice().reverse().forEach((item) => {
+          const row = historyBody.insertRow();
+          [item.serial, `${item.olt} / ${item.pon}`, item.ontId, `${item.lineProfile} / ${item.serviceProfile}`].forEach((value, index) => {
+            const cell = row.insertCell();
+            cell.textContent = value ?? "";
+            if (index === 0) cell.className = "serial";
+          });
+          const statusCell = row.insertCell();
+          const badge = document.createElement("span");
+          badge.className = "status";
+          badge.textContent = "Diterima API";
+          statusCell.append(badge);
+        });
+      }
+
+      function showMessage(text, type) {
+        message.textContent = text;
+        message.className = `message visible ${type}`;
+      }
+
+      const savedEndpoint = localStorage.getItem(endpointKey);
+      if (savedEndpoint) endpointInput.value = savedEndpoint;
+      document.querySelector("#api-label").textContent = endpointInput.value || "/api/onts";
+      renderHistory();
+
+      endpointInput.addEventListener("change", () => {
+        const endpoint = endpointInput.value.trim();
+        if (endpoint) localStorage.setItem(endpointKey, endpoint);
+        document.querySelector("#api-label").textContent = endpoint || "/api/onts";
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+
+        const values = new FormData(form);
+        const request = {
+          olt: values.get("olt").trim(),
+          pon: values.get("pon").trim(),
+          ontId: Number(values.get("ontId")),
+          serial: values.get("serial").trim().toUpperCase(),
+          lineProfile: values.get("lineProfile").trim(),
+          serviceProfile: values.get("serviceProfile").trim(),
+          omciEnabled: values.get("omciEnabled") === "on"
+        };
+        const endpoint = endpointInput.value.trim();
+        submitButton.disabled = true;
+        submitButton.textContent = "Mengirim...";
+        message.className = "message";
+        connection.classList.remove("online");
+        connection.textContent = "Menghubungi API...";
+
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify(request)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(typeof result.message === "string" ? result.message : `API merespons HTTP ${response.status}.`);
+          }
+          history.push(request);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(history));
+          } catch {
+            showMessage("Permintaan diterima API, tetapi riwayat tidak dapat disimpan pada browser ini.", "success");
+          }
+          renderHistory();
+          connection.classList.add("online");
+          connection.textContent = "API terhubung";
+          if (!message.classList.contains("visible")) {
+            showMessage("Permintaan registrasi diterima API. Status ini belum memastikan ONT sudah aktif; periksa hasil provisioning pada OLT.", "success");
+          }
+          form.reset();
+          endpointInput.value = endpoint;
+          document.querySelector("#omci-enabled").checked = true;
+        } catch (error) {
+          connection.textContent = "API tidak tersedia";
+          showMessage(`Registrasi gagal: ${error.message || "tidak dapat menghubungi API."}`, "error");
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = "Daftarkan ONT";
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
