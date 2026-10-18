@@ -163,3 +163,19 @@ Profile name  :D-50M
     assert parse_tcont_profiles(traffic) == ["default", "D-50M"]
     tcont = "Profile name :default\n Type  FBW(kbps)\n 1     10000   0   0   N/A  N/A\n\nProfile name :10Mbps\n Type FBW\n 1  10240  0  0  N/A  N/A\n"
     assert parse_tcont_profiles(tcont) == ["default", "10Mbps"]
+
+
+def test_parse_onu_information_wrapped_sn_format():
+    output = """ZXAN#show pon onu information gpon-olt_1/1/1
+            MAC            LLID                                         Offline
+ONU         SN report      ONU ID Auth configuration State              times
+-------------------------------------------------------------------------------
+1/1/1:1     SN(HWTC070D11F 30     SN(HWTC070D11FF)   LOS                16
+            F)
+1/1/1:2     SN(ZTEGD4A45D7 35     SN(ZTEGD4A45D7D)   working            0
+            D)
+1/1/1:7     SN(ZTEGD16500C 1      SN(ZTEGD16500C0)   working            1
+"""
+    result = parse_onu_information(output)
+    assert [o["serial"] for o in result] == ["HWTC070D11FF", "ZTEGD4A45D7D", "ZTEGD16500C0"]
+    assert [o["status"] for o in result] == ["los", "online", "online"]

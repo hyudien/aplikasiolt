@@ -17,6 +17,7 @@ _INFO_STATE = re.compile(
     re.IGNORECASE,
 )
 _SERIAL = re.compile(r"^(?:SN:)?(?P<serial>[A-Za-z0-9]{8,16})(?:\(.*\))?$")
+_FULL_SN = re.compile(r"\bSN\(([A-Za-z0-9]{8,16})\)")
 _UNCFIG_ROW = re.compile(
     r"^\s*(?P<interface>\d+/\d+/\d+)\s+(?P<serial>[A-Za-z0-9]{8,16})\s*$",
     re.IGNORECASE,
@@ -70,8 +71,12 @@ def parse_onu_information(output: str) -> list[dict]:
             continue
         interface = match.group("interface")
         pon, onu_id = interface.split(":")
-        serial_match = _SERIAL.match(rest.split()[0])
-        serial = serial_match.group("serial") if serial_match and not _INFO_STATE.fullmatch(rest.split()[0]) else ""
+        # Kolom "SN report" bisa terpotong ke baris berikutnya; kolom Auth configuration memuat SN(...) utuh.
+        if full_sn := _FULL_SN.search(rest):
+            serial = full_sn.group(1).upper()
+        else:
+            serial_match = _SERIAL.match(rest.split()[0])
+            serial = serial_match.group("serial") if serial_match and not _INFO_STATE.fullmatch(rest.split()[0]) else ""
         state, reason = normalize_state(re.sub(r"\s+", " ", state_match.group("state")))
         onts.append({
             "interface": interface,

@@ -601,7 +601,8 @@ async def sync_data(scope: str = "full", user: str = Depends(current_user)):
                 db.execute(
                     """INSERT INTO onts(interface,pon,onu_id,serial,name,pppoe_user,status,reason,vlan,profile,mode,optical_power,last_seen)
                     VALUES(:interface,:pon,:onu_id,:serial,:name,:pppoe_user,:status,:reason,:vlan,:profile,:mode,:optical_power,:last_seen)
-                    ON CONFLICT(interface) DO UPDATE SET status=:status,reason=:reason,last_seen=:last_seen""",
+                    ON CONFLICT(interface) DO UPDATE SET serial=CASE WHEN :serial != '' THEN :serial ELSE serial END,
+                    status=:status,reason=:reason,last_seen=:last_seen""",
                     {"name": "", "pppoe_user": "", "vlan": None, "profile": "", "mode": "", "optical_power": None,
                      "reason": "", **ont, "last_seen": started},
                 )
