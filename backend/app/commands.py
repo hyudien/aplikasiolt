@@ -47,9 +47,10 @@ def show_attenuation_commands(interface: str) -> list[str]:
     """Perintah redaman yang dicoba berurutan; firmware ZTE berbeda-beda."""
     validate_interface(interface)
     pon, onu_id = interface.split(":")
-    return [SHOW_ATTENUATION.format(interface=interface)] + [
-        alt.format(interface=interface, pon=pon, onu_id=onu_id) for alt in SHOW_ATTENUATION_ALT
-    ]
+    # onu-rx menghasilkan satu nilai Rx yang jelas, jadi dicoba lebih dulu.
+    return [alt.format(interface=interface, pon=pon, onu_id=onu_id) for alt in SHOW_ATTENUATION_ALT[:1]] + [
+        SHOW_ATTENUATION.format(interface=interface)
+    ] + [alt.format(interface=interface, pon=pon, onu_id=onu_id) for alt in SHOW_ATTENUATION_ALT[1:]]
 
 
 _PROFILE_RE = re.compile(r"[A-Za-z0-9_.\-]{1,64}")

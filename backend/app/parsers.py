@@ -129,18 +129,30 @@ def parse_tcont_indexes(output: str) -> list[int]:
 CLI_ERROR = re.compile(r"%\s*error|invalid|incomplete|unknown command|not exist|fail", re.IGNORECASE)
 
 
+def _plausible_rx(value: str) -> str | None:
+    """Daya terima GPON ONU selalu negatif (sekitar -8 s.d. -40 dBm); nilai lain = salah baca (mis. Tx/dB)."""
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return f"{value} dBm" if -50.0 <= number < 0 else None
+
+
 def parse_attenuation(output: str) -> str | None:
-    """Parse `show pon power attenuation` -> daya terima ONU (baris down, Rx), mis. '-22.3 dBm'."""
-    rx = re.compile(r"\bRx[ \t]*:[ \t]*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
-    rx_only = re.search(r"\bRx[ \t]*(?:power)?[ \t]*:?[ \t]*(-?\d+(?:\.\d+)?)[ \t]*\(?dbm", output, re.IGNORECASE)
-    for direction in ("down", "up"):
-        for line in output.splitlines():
-            if line.strip().lower().startswith(direction) and (m := rx.search(line)):
-                return f"{m.group(1)} dBm"
-    if rx_only:
-        return f"{rx_only.group(1)} dBm"
-    if m := re.search(r"^[ \t]*gpon-onu_\S+[ \t]+(-?\d+(?:\.\d+)?)[ \t]*\(?dbm", output, re.IGNORECASE | re.MULTILINE):
-        return f"{m.group(1)} dBm"
+    """Daya terima di ONU (dBm) dari `show pon power onu-rx` atau `show pon power attenuation`.
+
+    Hanya nilai Rx sisi ONU (baris down) yang dipakai; nilai Tx, dB redaman, dan nilai positif ditolak.
+    """
+    num = r"(-?\d+(?:\.\d+)?)"
+    if m := re.search(r"^[ \t]*gpon-onu_\S+[ \t]+" + num + r"[ \t]*\(?dbm", output, re.IGNORECASE | re.MULTILINE):
+        return _plausible_rx(m.group(1))
+    for line in output.splitlines():
+        if line.strip().lower().startswith("down"):
+            # Kolom ONU ada setelah Tx OLT: "down Tx :7.5(dbm) Rx:-25.2(dbm) 32.7(dB)"
+            if m := re.search(r"\bRx[ \t]*:[ \t]*" + num + r"[ \t]*\(?dbm", line, re.IGNORECASE):
+                return _plausible_rx(m.group(1))
+    if m := re.search(r"\bRx[ \t]*power[ \t]*:?[ \t]*" + num + r"[ \t]*\(?dbm", output, re.IGNORECASE):
+        return _plausible_rx(m.group(1))
     return None
 
 

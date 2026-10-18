@@ -122,3 +122,9 @@ def test_change_package_zte_sequence():
     assert sent[1:] == ["configure terminal", "interface gpon-onu_1/1/1:5", "tcont 1 profile 50Mbps", "exit", "exit", "write"]
     with pytest.raises(ValueError):
         asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "x;reload"))
+
+
+def test_parse_attenuation_rejects_implausible_values():
+    assert parse_attenuation("down    Tx :6.100(dbm)   Rx:6.000(dbm)   6.0(dB)") is None
+    assert parse_attenuation("up      Rx :-29.1(dbm)   Tx:6.0(dbm)    6.0(dB)") is None
+    assert parse_attenuation("gpon-onu_1/1/1:5    6.000(dbm)") is None
