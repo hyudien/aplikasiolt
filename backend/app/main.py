@@ -229,6 +229,22 @@ def get_ont(interface: str):
     return ont
 
 
+ENRICH_FIELDS = ("name", "pppoe_user", "vlan", "profile", "mode")
+
+
+def clean_ont_config(config: dict | None) -> dict:
+    """Ambil hanya kolom yang diizinkan dan tidak kosong; password tidak pernah ikut."""
+    return {key: config[key] for key in ENRICH_FIELDS if config and config.get(key) not in (None, "")}
+
+
+def store_ont_config(db, interface: str, config: dict):
+    db.execute(
+        "UPDATE onts SET name=COALESCE(?,name), pppoe_user=COALESCE(?,pppoe_user), vlan=COALESCE(?,vlan), "
+        "profile=COALESCE(?,profile), mode=COALESCE(?,mode) WHERE interface=?",
+        (*(config.get(key) for key in ENRICH_FIELDS), interface),
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -333,15 +349,24 @@ async def pon_detail(pon: str, _user: str = Depends(current_user)):
     return {"pon": pon, "onts": [ont for ont in onts if ont["pon"] == pon]}
 
 
+SEARCH_FIELDS = ("interface", "pon", "onu_id", "serial", "name", "pppoe_user", "status", "reason", "profile", "vlan", "mode")
+
+
 @app.get("/api/onts/search")
 async def search_onts(q: str = Query(min_length=1, max_length=100), _user: str = Depends(current_user)):
     if DEMO_MODE:
         onts = await adapter.all_onts()
-        return [ont for ont in onts if q.casefold() in " ".join(str(ont.get(k, "")) for k in ("name", "serial", "pppoe_user")).casefold()]
+        needle = q.casefold()
+        return [
+            ont for ont in onts
+            if needle in " ".join(str(ont.get(k) or "") for k in SEARCH_FIELDS).casefold()
+        ][:100]
+    pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    where = " OR ".join(f"CAST({field} AS TEXT) LIKE ? ESCAPE '\\'" for field in SEARCH_FIELDS)
     with connect_db() as db:
         return [dict(row) for row in db.execute(
-            "SELECT * FROM onts WHERE name LIKE ? OR serial LIKE ? OR pppoe_user LIKE ? LIMIT 100",
-            tuple(f"%{q}%" for _ in range(3)),
+            f"SELECT * FROM onts WHERE {where} ORDER BY pon,onu_id LIMIT 100",
+            tuple(pattern for _ in SEARCH_FIELDS),
         )]
 
 
@@ -366,7 +391,19 @@ async def unconfigured(_user: str = Depends(current_user)):
 
 @app.get("/api/onts/{interface:path}")
 async def ont_detail(interface: str, _user: str = Depends(current_user)):
-    return get_ont(interface)
+    ont = get_ont(interface)
+    if not DEMO_MODE and not any(ont.get(key) for key in ("name", "profile", "vlan", "pppoe_user")):
+        try:
+            async with olt_lock:
+                extra = await adapter.ont_config(interface)
+            extra = clean_ont_config(extra)
+            if extra:
+                with connect_db() as db:
+                    store_ont_config(db, interface, extra)
+                ont = {**ont, **extra}
+        except Exception:
+            pass
+    return ont
 
 
 @app.get("/api/profiles")
@@ -488,6 +525,15 @@ async def sync_data(scope: str = "full", user: str = Depends(current_user)):
         if scope != "full":
             onts = [ont for ont in onts if ont["pon"] == scope]
         with connect_db() as db:
+            preserved = {
+                str(row["serial"]).upper(): clean_ont_config(dict(row))
+                for row in db.execute("SELECT serial,name,pppoe_user,vlan,profile,mode FROM onts")
+            }
+            onts = [
+                {**ont, **{k: v for k, v in preserved.get(str(ont["serial"]).upper(), {}).items()
+                           if ont.get(k) in (None, "")}}
+                for ont in onts
+            ]
             if scope == "full":
                 db.execute("DELETE FROM onts")
                 db.execute("DELETE FROM pons")
@@ -518,6 +564,63 @@ async def sync_data(scope: str = "full", user: str = Depends(current_user)):
                        (str(exc)[:500], datetime.now(timezone.utc).isoformat(), job_id))
         log_action(user, "sync", scope, "failed", str(exc))
         raise
+
+
+enrich_tasks: set[asyncio.Task] = set()
+enrich_active: set[str] = set()
+
+
+async def run_enrich(job_id: int, scope: str, interfaces: list[str]):
+    processed = failed = 0
+    try:
+        for interface in interfaces:
+            try:
+                async with olt_lock:
+                    config = clean_ont_config(await adapter.ont_config(interface))
+                if config:
+                    with connect_db() as db:
+                        store_ont_config(db, interface, config)
+                processed += 1
+            except Exception:
+                failed += 1
+            if (processed + failed) % 20 == 0:
+                with connect_db() as db:
+                    db.execute("UPDATE sync_jobs SET summary=? WHERE id=?",
+                               (json.dumps({"total": len(interfaces), "processed": processed, "failed": failed}), job_id))
+        status = "success"
+    except Exception:
+        status = "failed"
+    finally:
+        enrich_active.discard(scope)
+    summary = json.dumps({"total": len(interfaces), "processed": processed, "failed": failed})
+    with connect_db() as db:
+        db.execute("UPDATE sync_jobs SET status=?,summary=?,finished_at=? WHERE id=?",
+                   (status, summary, datetime.now(timezone.utc).isoformat(), job_id))
+
+
+@app.post("/api/sync/enrich")
+async def enrich_data(scope: str = "full", user: str = Depends(current_user)):
+    if scope != "full" and not re.fullmatch(r"[0-9]{1,3}/[0-9]{1,3}/[0-9]{1,3}", scope):
+        raise HTTPException(422, "Gunakan scope=full atau nomor PON seperti 1/1/1")
+    if "full" in enrich_active or scope in enrich_active or (scope == "full" and enrich_active):
+        raise HTTPException(409, "Pelengkapan data pelanggan sedang berjalan")
+    with connect_db() as db:
+        if scope == "full":
+            rows = db.execute("SELECT interface FROM onts ORDER BY pon,onu_id").fetchall()
+        else:
+            rows = db.execute("SELECT interface FROM onts WHERE pon=? ORDER BY onu_id", (scope,)).fetchall()
+        interfaces = [row["interface"] for row in rows]
+        cursor = db.execute("INSERT INTO sync_jobs(type,status,summary,started_at) VALUES(?,?,?,?)",
+                            (f"enrich:{scope}", "running",
+                             json.dumps({"total": len(interfaces), "processed": 0, "failed": 0}),
+                             datetime.now(timezone.utc).isoformat()))
+        job_id = cursor.lastrowid
+    enrich_active.add(scope)
+    task = asyncio.create_task(run_enrich(job_id, scope, interfaces))
+    enrich_tasks.add(task)
+    task.add_done_callback(enrich_tasks.discard)
+    log_action(user, "enrich", scope, "started", f"{len(interfaces)} ONT")
+    return {"id": job_id, "status": "running", "total": len(interfaces)}
 
 
 @app.get("/api/sync/status")

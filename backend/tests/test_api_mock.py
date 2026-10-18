@@ -46,3 +46,41 @@ def test_mock_auth_dashboard_search_registration_and_audit(tmp_path, monkeypatch
         assert client.get(f"/api/onts/{interface}").status_code == 404
         logs = client.get("/api/logs").json()
         assert [entry["action"] for entry in logs][:3] == ["delete", "reboot", "register"]
+
+
+def test_search_enrich_and_sync_preserve(tmp_path, monkeypatch):
+    import time
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "test2.db"))
+    with TestClient(main.app) as client:
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).json()["access_token"]
+        client.headers["Authorization"] = "Bearer " + token
+        monkeypatch.setattr(main, "DEMO_MODE", False)
+        assert client.post("/api/sync/enrich?scope=bad").status_code == 422
+        assert client.post("/api/sync").status_code == 200
+        client.post("/api/sync")
+        with main.connect_db() as db:
+            db.execute("UPDATE onts SET name='',pppoe_user='',vlan=NULL,profile='',mode=''")
+        assert client.get("/api/onts/search?q=pelanggan01").json() == []
+        job = client.post("/api/sync/enrich?scope=full").json()
+        assert job["status"] == "running"
+        for _ in range(50):
+            status = client.get("/api/sync/status").json()
+            if status[0]["status"] != "running":
+                break
+            time.sleep(0.1)
+        assert status[0]["type"] == "enrich:full" and status[0]["status"] == "success"
+        assert client.get("/api/onts/search?q=pelanggan01").json()[0]["serial"] == "ZTEG00000001"
+        assert client.get("/api/onts/search?q=50m").json()[0]["profile"] == "50M"
+        assert client.get("/api/onts/search?q=200").json()[0]["vlan"] == 200
+        assert client.get("/api/onts/search?q=ROSE").json() == []
+        assert client.get("/api/onts/search?q=rumah uji").json()[0]["interface"] == "1/1/1:2"
+        # full sync tidak menghapus data hasil enrich
+        mock_ont = main.adapter.onts[0]
+        saved = dict(mock_ont)
+        for key in ("name", "pppoe_user", "profile", "mode"):
+            mock_ont[key] = ""
+        mock_ont["vlan"] = None
+        client.post("/api/sync")
+        mock_ont.update(saved)
+        row = client.get("/api/onts/1/1/1:1").json()
+        assert row["name"] == "Pelanggan Contoh" and row["vlan"] == 100 and row["profile"] == "100M"

@@ -107,3 +107,31 @@ def parse_pon_id(interface: str) -> tuple[str, int]:
     if not match:
         raise ValueError("Format interface ONT tidak valid")
     return match.group("pon"), int(match.group("onu_id"))
+
+
+def parse_onu_running_config(output: str) -> dict:
+    """Parse `show running-config interface gpon-onu_x/x/x:y` -> name, profile, vlan."""
+    result: dict = {}
+    if m := re.search(r"^[ \t]*name[ \t]+(\S.*?)\s*$", output, re.MULTILINE):
+        result["name"] = m.group(1)
+    if m := re.search(r"^[ \t]*tcont[ \t]+\d+[ \t]+(?:name[ \t]+\S+[ \t]+)?profile[ \t]+(\S+)", output, re.MULTILINE):
+        result["profile"] = m.group(1)
+    if m := re.search(r"\buser-vlan[ \t]+(\d+)", output):
+        result["vlan"] = int(m.group(1))
+    return result
+
+
+def parse_onu_mng_config(output: str) -> dict:
+    """Parse `show onu running config gpon-onu_x/x/x:y` -> pppoe_user, mode, vlan.
+
+    Password PPPoE sengaja tidak pernah diparse maupun dikembalikan.
+    """
+    result: dict = {}
+    if m := re.search(r"\bwan-ip[ \t]+\d+[ \t]+mode[ \t]+(\w+)", output):
+        result["mode"] = m.group(1).lower()
+        if result["mode"] == "pppoe" and (u := re.search(
+                r"\bwan-ip[ \t]+\d+[ \t]+mode[ \t]+pppoe[ \t]+username[ \t]+(\S+)", output)):
+            result["pppoe_user"] = u.group(1)
+    if m := re.search(r"\bservice[ \t]+\S+[ \t]+gemport[ \t]+\d+[ \t]+vlan[ \t]+(\d+)", output):
+        result["vlan"] = int(m.group(1))
+    return result

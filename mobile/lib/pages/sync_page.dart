@@ -39,6 +39,25 @@ class _SyncPageState extends State<SyncPage> {
     }
   }
 
+  Future<void> _enrich(String scope) async {
+    setState(() => _busy = true);
+    try {
+      await ApiClient.instance.post('/api/sync/enrich?scope=${Uri.encodeComponent(scope)}');
+      await _refresh();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pelengkapan data berjalan di latar belakang, bisa memakan waktu beberapa menit.')));
+      for (var i = 0; i < 300 && mounted; i++) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        await _refresh();
+        final running = _jobs.any((job) => (job as Map<String, dynamic>)['type'].toString().startsWith('enrich:') && job['status'] == 'running');
+        if (!running) break;
+      }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -57,9 +76,13 @@ class _SyncPageState extends State<SyncPage> {
         const SizedBox(height: 16),
         FilledButton.icon(onPressed: _busy ? null : () => _sync('full'), icon: const Icon(Icons.sync), label: const Text('Sinkronisasi penuh')),
         const SizedBox(height: 12),
-        TextField(controller: _pon, decoration: const InputDecoration(labelText: 'Sinkronkan PON tertentu (contoh 1/1/1)')),
+        TextField(controller: _pon, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Sinkronkan PON tertentu (contoh 1/1/1)')),
         const SizedBox(height: 8),
         OutlinedButton.icon(onPressed: _busy ? null : () => _sync(_pon.text.trim()), icon: const Icon(Icons.hub), label: const Text('Sinkronkan PON')),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(onPressed: _busy ? null : () => _enrich('full'), icon: const Icon(Icons.person_search), label: const Text('Lengkapi data pelanggan')),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(onPressed: _busy || _pon.text.trim().isEmpty ? null : () => _enrich(_pon.text.trim()), icon: const Icon(Icons.hub), label: const Text('Lengkapi data PON ini')),
         if (_busy) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: LinearProgressIndicator()),
         const SizedBox(height: 24),
         Text('Riwayat sync', style: Theme.of(context).textTheme.titleLarge),

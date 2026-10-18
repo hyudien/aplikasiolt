@@ -31,6 +31,12 @@ class MockOltAdapter(OltAdapter):
     async def all_onts(self) -> list[dict]:
         return [dict(ont) for ont in self.onts]
 
+    async def ont_config(self, interface: str) -> dict:
+        ont = next((item for item in self.onts if item["interface"] == interface), None)
+        if ont is None:
+            return {}
+        return {key: ont[key] for key in ("name", "pppoe_user", "vlan", "profile", "mode") if ont.get(key)}
+
     async def unconfigured(self) -> list[dict]:
         return [dict(ont) for ont in self.unconfigured_onts]
 

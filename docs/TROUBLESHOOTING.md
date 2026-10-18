@@ -52,3 +52,17 @@ python -m pytest tests/test_parsers.py -q
 ## Perintah konfigurasi dan keselamatan
 
 Jangan mencoba mengatasi respons “perintah tulis belum diaktifkan” dengan mengirim CLI langsung dari HP. Tinjau template di `app/commands.py`, cocokkan dengan manual/firmware dan uji pada lab. Simpan backup OLT sebelum perubahan. Untuk kegagalan API, lihat `sudo journalctl -u olt-control -f` atau `docker compose logs -f`; redaksi token dan kredensial sebelum membagikan log.
+
+## Nama, paket, VLAN, dan PPPoE kosong di menu Cari
+
+Sinkronisasi penuh hanya membaca interface, SN, dan status ONU. Data pelanggan dilengkapi terpisah lewat tombol **Lengkapi data pelanggan** di menu Sync (`POST /api/sync/enrich?scope=full` atau `scope=1/1/1` untuk satu PON). Untuk tiap ONU backend menjalankan dua perintah `show` (read-only):
+
+- `show running-config interface gpon-onu_1/1/1:1` → nama, paket (profile), VLAN
+- `show onu running config gpon-onu_1/1/1:1` → username PPPoE, mode, VLAN cadangan
+
+Catatan:
+
+- **Password PPPoE sengaja tidak pernah diparse, disimpan, di-log, atau dikembalikan oleh API.**
+- Proses berjalan di latar belakang; untuk sekitar 500 ONU butuh beberapa menit. Pantau progres di `GET /api/sync/status` (tipe `enrich:full` / `enrich:1/1/1`, ringkasan `processed`/`failed`). ONU yang gagal dilewati.
+- Sinkronisasi penuh berikutnya mempertahankan data hasil pelengkapan (dicocokkan berdasarkan SN).
+- Membuka detail ONU yang datanya masih kosong juga mengambil data tersebut dari OLT.

@@ -75,6 +75,23 @@ class ZteC320Adapter(OltAdapter):
             onts.extend(parsers.parse_onu_information(output))
         return onts
 
+    async def ont_config(self, interface: str) -> dict:
+        """Baca nama, paket, VLAN, user PPPoE (tanpa password) lewat perintah show read-only."""
+        running = parsers.parse_onu_running_config(await self.execute(commands.show_onu_running(interface)))
+        mng = parsers.parse_onu_mng_config(await self.execute(commands.show_onu_mng(interface)))
+        if "vlan" in running:
+            mng.pop("vlan", None)
+        return {**running, **mng}
+
+    async def ont_configs_for_pon(self, pon: str, interfaces: list[str]) -> dict[str, dict]:
+        results: dict[str, dict] = {}
+        for interface in interfaces:
+            try:
+                results[interface] = await self.ont_config(interface)
+            except Exception:
+                continue
+        return results
+
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
 

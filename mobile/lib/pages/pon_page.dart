@@ -28,7 +28,7 @@ class _PonPageState extends State<PonPage> {
               final status = ont['status']?.toString() ?? 'offline';
               final filterMatch = _filter == 'Semua' || (_filter == 'Online' && status == 'online') ||
                   (_filter == 'Offline' && status == 'offline') || (_filter == 'LOS' && status == 'los');
-              final text = '${ont['name']} ${ont['serial']} ${ont['pppoe_user']}'.toLowerCase();
+              final text = '${ont['name']} ${ont['serial']} ${ont['pppoe_user']} ${ont['profile']} ${ont['vlan']}'.toLowerCase();
               return filterMatch && text.contains(_query.toLowerCase());
             }).toList();
             return Column(children: [
@@ -56,7 +56,8 @@ class _PonPageState extends State<PonPage> {
                           return ListTile(
                             leading: CircleAvatar(child: Text('${ont['onu_id'] ?? '-'}')),
                             title: Text((ont['name']?.toString().isNotEmpty ?? false) ? ont['name'].toString() : ont['serial'].toString()),
-                            subtitle: Text('${ont['serial']} • ${ont['reason'] ?? ont['status']}'),
+                            subtitle: Text('${ont['serial']} • ${ont['reason'] ?? ont['status']}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${ont['vlan'] ?? '-'} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}'),
+                            isThreeLine: true,
                             trailing: Text(ont['status'].toString().toUpperCase()),
                             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OntDetailPage(interface: ont['interface'].toString()))),
                           );

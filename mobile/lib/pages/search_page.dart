@@ -45,7 +45,7 @@ class _SearchPageState extends State<SearchPage> {
             controller: _query,
             onSubmitted: (_) => _search(),
             decoration: InputDecoration(
-              labelText: 'Nama, SN, atau username PPPoE',
+              labelText: 'Nama, PPPoE, paket, VLAN, SN, PON, atau status',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: IconButton(onPressed: _search, icon: const Icon(Icons.arrow_forward)),
             ),
@@ -62,7 +62,8 @@ class _SearchPageState extends State<SearchPage> {
                       return Card(
                         child: ListTile(
                           title: Text((ont['name']?.toString().isNotEmpty ?? false) ? ont['name'].toString() : ont['serial'].toString()),
-                          subtitle: Text('${ont['serial']} • ${ont['pppoe_user'] ?? '-'} • PON ${ont['pon']}'),
+                          subtitle: Text('${ont['serial']} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${ont['vlan'] ?? '-'} • PON ${ont['pon']}'),
+                          isThreeLine: true,
                           trailing: _StatusBadge(status: ont['status']?.toString() ?? 'offline'),
                           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OntDetailPage(interface: ont['interface'].toString()))),
                         ),

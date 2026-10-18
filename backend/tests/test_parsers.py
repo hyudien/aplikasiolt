@@ -41,3 +41,50 @@ ONU        SN report        LLID  ONU ID  Auth  configuration  State    Offline 
     assert result[0]["serial"] == "ZTEGC0000001"
     assert result[1]["onu_id"] == 2 and result[1]["pon"] == "1/1/1"
     assert parse_onu_information("ONU  SN report  State\nno rows") == []
+
+
+RUNNING_SAMPLE = """interface gpon-onu_1/1/1:1\r
+  name PUTRI KUS -24\r
+  tcont 1 name PPP profile UPto-6M\r
+  gemport 1 name PPP tcont 1\r
+  gemport 1 traffic-limit upstream Upto-6M downstream Upto-6M\r
+  encrypt 1 enable downstream\r
+  service-port 1 vport 1 user-vlan 177 vlan 177\r
+!\r
+end\r
+"""
+
+MNG_SAMPLE = """pon-onu-mng gpon-onu_1/1/1:1
+  service ServiceName gemport 1 vlan 177
+  wan-ip 1 mode pppoe username putri@nombes.net password <REDACTED> vlan-profile TEST_177 host 1
+  wan-ip 1 ping-response enable traceroute-response enable
+  security-mgmt 1 state enable mode forward
+!
+"""
+
+
+def test_parse_onu_running_config():
+    from app.parsers import parse_onu_running_config
+    assert parse_onu_running_config(RUNNING_SAMPLE) == {"name": "PUTRI KUS -24", "profile": "UPto-6M", "vlan": 177}
+    assert parse_onu_running_config("") == {}
+    assert parse_onu_running_config("  name   Budi  \n") == {"name": "Budi"}
+
+
+def test_parse_onu_mng_config_never_returns_password():
+    from app.parsers import parse_onu_mng_config
+    result = parse_onu_mng_config(MNG_SAMPLE)
+    assert result == {"pppoe_user": "putri@nombes.net", "mode": "pppoe", "vlan": 177}
+    assert "REDACTED" not in str(result)
+    assert parse_onu_mng_config("garbage") == {}
+
+
+def test_interface_validation_rejects_bad_input():
+    import pytest
+    from app import commands
+    assert commands.show_onu_running("1/1/1:1") == "show running-config interface gpon-onu_1/1/1:1"
+    assert commands.show_onu_mng("1/1/1:1") == "show onu running config gpon-onu_1/1/1:1"
+    for bad in ("1/1/1", "1/1/1:1; reload", "1/1/1:1\nwrite", "", "a/b/c:d", "1/1/1:1 "):
+        with pytest.raises(ValueError):
+            commands.show_onu_running(bad)
+        with pytest.raises(ValueError):
+            commands.show_onu_mng(bad)
