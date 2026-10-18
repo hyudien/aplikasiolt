@@ -10,7 +10,21 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  bool _syncing = false;
+
   Future<dynamic> _load() => ApiClient.instance.get('/api/olt/dashboard');
+
+  Future<void> _refreshFromOlt() async {
+    setState(() => _syncing = true);
+    try {
+      await ApiClient.instance.post('/api/sync?scope=full');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status ONT diperbarui dari OLT.')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<dynamic>(
@@ -25,6 +39,17 @@ class _DashboardPageState extends State<DashboardPage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: _syncing ? null : _refreshFromOlt,
+                    icon: _syncing
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh),
+                    label: Text(_syncing ? 'Memperbarui...' : 'Refresh dari OLT'),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Wrap(spacing: 10, runSpacing: 10, children: [
                   _SummaryCard(label: 'Total ONT', value: data['total'] ?? 0, icon: Icons.router),
                   _SummaryCard(label: 'Online', value: data['online'] ?? 0, icon: Icons.check_circle, color: Colors.green),
