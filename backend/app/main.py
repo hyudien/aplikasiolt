@@ -493,6 +493,18 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
         raise HTTPException(409, "SN pengganti sudah terdaftar")
     if action == "change-pppoe" and any(item.get("pppoe_user") == payload.username and item["interface"] != interface for item in known_onts):
         raise HTTPException(409, "Username PPPoE sudah digunakan")
+    if action == "attenuation":
+        try:
+            async with olt_lock:
+                result = await adapter.attenuation(interface)
+        except Exception as exc:
+            log_action(user, action, interface, "failed", str(exc)[:200])
+            raise HTTPException(502, "Gagal membaca redaman dari OLT") from exc
+        if result.get("optical_power"):
+            with connect_db() as db:
+                db.execute("UPDATE onts SET optical_power=? WHERE interface=?", (result["optical_power"], interface))
+        log_action(user, action, interface, "success")
+        return result
     async with olt_lock:
         if not DEMO_MODE:
             log_action(user, action, interface, "failed", "CLI write belum diimplementasikan")

@@ -37,6 +37,10 @@ class MockOltAdapter(OltAdapter):
             return {}
         return {key: ont[key] for key in ("name", "pppoe_user", "vlan", "profile", "mode") if ont.get(key)}
 
+    async def attenuation(self, interface: str) -> dict:
+        ont = next((item for item in self.onts if item["interface"] == interface), None)
+        return {"optical_power": ont.get("optical_power") if ont else None}
+
     async def unconfigured(self) -> list[dict]:
         return [dict(ont) for ont in self.unconfigured_onts]
 

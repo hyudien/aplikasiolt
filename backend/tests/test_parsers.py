@@ -1,4 +1,4 @@
-from app.parsers import parse_onu_information, parse_onu_state, parse_pon_id, parse_unconfigured
+from app.parsers import parse_attenuation, parse_onu_information, parse_onu_state, parse_pon_id, parse_unconfigured
 
 
 def test_parse_onu_state_recognizes_statuses_and_ignores_headers():
@@ -88,3 +88,9 @@ def test_interface_validation_rejects_bad_input():
             commands.show_onu_running(bad)
         with pytest.raises(ValueError):
             commands.show_onu_mng(bad)
+
+
+def test_parse_attenuation():
+    out = "OLT                  ONU                  Attenuation\nup      Rx :-21.397(dbm)   Tx:2.456(dbm)    22.2(dB)\ndown    Tx :4.1(dbm)       Rx:-22.3(dbm)    26.4(dB)\n"
+    assert parse_attenuation(out) == "-22.3 dBm"
+    assert parse_attenuation("") is None

@@ -5,7 +5,7 @@ import re
 SHOW_ONU_STATE = "show gpon onu state"
 SHOW_ONU_INFORMATION = "show pon onu information gpon-olt_{pon}"
 SHOW_UNCONFIGURED = "show gpon onu uncfg"
-SHOW_ATTENUATION = "show pon power attenuation {interface}"
+SHOW_ATTENUATION = "show pon power attenuation gpon-onu_{interface}"
 SHOW_DETAIL = "show gpon onu detail-info {interface}"
 PON_INTERFACE = "interface gpon-olt_{pon}"
 REGISTER_ONU = "onu {onu_id} type {onu_type} sn {serial}"
@@ -35,6 +35,10 @@ def validate_interface(interface: str) -> str:
 
 def show_onu_running(interface: str) -> str:
     return SHOW_ONU_RUNNING.format(interface=validate_interface(interface))
+
+
+def show_attenuation(interface: str) -> str:
+    return SHOW_ATTENUATION.format(interface=validate_interface(interface))
 
 
 def show_onu_mng(interface: str) -> str:

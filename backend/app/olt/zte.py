@@ -92,6 +92,10 @@ class ZteC320Adapter(OltAdapter):
                 continue
         return results
 
+    async def attenuation(self, interface: str) -> dict:
+        output = await self.execute(commands.show_attenuation(interface))
+        return {"optical_power": parsers.parse_attenuation(output)}
+
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
 

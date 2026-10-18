@@ -121,6 +121,16 @@ def parse_onu_running_config(output: str) -> dict:
     return result
 
 
+def parse_attenuation(output: str) -> str | None:
+    """Parse `show pon power attenuation` -> daya terima ONU (baris down, Rx), mis. '-22.3 dBm'."""
+    rx = re.compile(r"\bRx[ \t]*:[ \t]*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+    for direction in ("down", "up"):
+        for line in output.splitlines():
+            if line.strip().lower().startswith(direction) and (m := rx.search(line)):
+                return f"{m.group(1)} dBm"
+    return None
+
+
 def parse_onu_mng_config(output: str) -> dict:
     """Parse `show onu running config gpon-onu_x/x/x:y` -> pppoe_user, mode, vlan.
 
