@@ -63,9 +63,20 @@ class ZteC320Adapter(OltAdapter):
 
     async def execute(self, command: str) -> str:
         async with self.lock:
-            await self._connect()
-            self.writer.write(command + "\n")
-            return await self._read_until_prompt()
+            for attempt in range(2):
+                try:
+                    if self.writer is not None and (self.writer.is_closing() or self.reader.at_eof()):
+                        await self.close()
+                    await self._connect()
+                    self.writer.write(command + "\n")
+                    return await self._read_until_prompt()
+                except PermissionError:
+                    raise
+                except Exception:
+                    # Koneksi lama kemungkinan sudah ditutup OLT (idle); sambung ulang sekali.
+                    await self.close()
+                    if attempt == 1:
+                        raise
 
     async def all_onts(self) -> list[dict]:
         onts = parsers.parse_onu_state(await self.execute(commands.SHOW_ONU_STATE))
@@ -114,6 +125,9 @@ class ZteC320Adapter(OltAdapter):
 
     async def close(self):
         if self.writer:
-            self.writer.close()
+            try:
+                self.writer.close()
+            except Exception:
+                pass
             self.writer = None
             self.reader = None
