@@ -145,6 +145,15 @@ def parse_tcont_profiles(output: str) -> list[str]:
     return names
 
 
+def parse_gemport_indexes(output: str) -> list[int]:
+    """Nomor GEM port dari running-config ONU (`gemport 1 name G1 tcont 1`), tanpa duplikat."""
+    found: list[int] = []
+    for m in re.finditer(r"^[ \t]*gemport[ \t]+(\d+)\b", output, re.MULTILINE):
+        if int(m.group(1)) not in found:
+            found.append(int(m.group(1)))
+    return found
+
+
 def parse_tcont_indexes(output: str) -> list[int]:
     """Ambil nomor T-CONT dari running-config ONU (`tcont 1 name T1 profile 20M`)."""
     return [int(m.group(1)) for m in re.finditer(r"^[ \t]*tcont[ \t]+(\d+)\b.*\bprofile\b", output, re.MULTILINE)]

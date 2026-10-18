@@ -5,6 +5,8 @@ import re
 SHOW_ONU_STATE = "show gpon onu state"
 SHOW_ONU_INFORMATION = "show pon onu information gpon-olt_{pon}"
 SHOW_TCONT_PROFILES = ("show gpon profile tcont", "show pon profile tcont")
+SHOW_TRAFFIC_PROFILES = ("show gpon profile traffic", "show pon profile traffic")
+SET_GEMPORT_LIMIT = "gemport {index} traffic-limit upstream {upstream} downstream {downstream}"
 SHOW_UNCONFIGURED = "show gpon onu uncfg"
 SHOW_ATTENUATION = "show pon power attenuation gpon-onu_{interface}"
 SHOW_DETAIL = "show gpon onu detail-info {interface}"
@@ -65,6 +67,11 @@ def validate_profile(profile: str) -> str:
 
 def set_tcont_profile(index: int, profile: str) -> str:
     return SET_TCONT.format(index=int(index), profile=validate_profile(profile))
+
+
+def set_gemport_limit(index: int, upstream: str, downstream: str) -> str:
+    return SET_GEMPORT_LIMIT.format(
+        index=int(index), upstream=validate_profile(upstream), downstream=validate_profile(downstream))
 
 
 def show_attenuation(interface: str) -> str:

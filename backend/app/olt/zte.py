@@ -116,15 +116,23 @@ class ZteC320Adapter(OltAdapter):
             raise RuntimeError("Perintah redaman ditolak OLT: " + last.splitlines()[-2 if len(last.splitlines()) > 1 else -1][:120])
         return {"optical_power": None}
 
-    async def change_package(self, interface: str, profile: str) -> dict:
-        """Ganti profile bandwidth (T-CONT) ONU; perintah divalidasi dan hasil CLI diperiksa."""
+    async def change_package(self, interface: str, profile: str,
+                             upstream: str | None = None, downstream: str | None = None) -> dict:
+        """Ganti T-CONT profile dan (opsional) traffic-limit upstream/downstream pada GEM port ONU."""
         commands.validate_interface(interface)
+        if bool(upstream) != bool(downstream):
+            raise ValueError("Profile upstream dan downstream harus diisi bersamaan")
         running = await self.execute(commands.show_onu_running(interface))
-        indexes = parsers.parse_tcont_indexes(running)
-        if not indexes:
+        tconts = parsers.parse_tcont_indexes(running)
+        if not tconts:
             raise RuntimeError("T-CONT ONU tidak ditemukan di konfigurasi OLT")
         sequence = ["configure terminal", commands.ONU_INTERFACE.format(interface=interface)]
-        sequence += [commands.set_tcont_profile(index, profile) for index in indexes]
+        sequence += [commands.set_tcont_profile(index, profile) for index in tconts]
+        if upstream:
+            gemports = parsers.parse_gemport_indexes(running)
+            if not gemports:
+                raise RuntimeError("GEM port ONU tidak ditemukan di konfigurasi OLT")
+            sequence += [commands.set_gemport_limit(index, upstream, downstream) for index in gemports]
         failure = None
         try:
             for command in sequence:
@@ -141,7 +149,19 @@ class ZteC320Adapter(OltAdapter):
         if failure is not None:
             raise RuntimeError("OLT menolak perintah paket: " + failure[0][:120])
         await self.execute(commands.SAVE_CONFIG)
-        return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile}
+        return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile,
+                "upstream": upstream, "downstream": downstream}
+
+    async def traffic_profiles_list(self) -> list[str]:
+        """Daftar traffic profile (untuk gemport upstream/downstream) yang ada di OLT."""
+        for command in commands.SHOW_TRAFFIC_PROFILES:
+            try:
+                names = parsers.parse_tcont_profiles(await self.execute(command))
+            except Exception:
+                continue
+            if names:
+                return names
+        return []
 
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))

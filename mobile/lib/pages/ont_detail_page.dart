@@ -40,41 +40,70 @@ class _OntDetailPageState extends State<OntDetailPage> {
       if (credentials == null || credentials['username']!.trim().isEmpty || credentials['password']!.isEmpty) return;
       values.addAll(credentials);
     } else if (action == 'change-package') {
-      List<String> profiles = [];
+      List<String> tcont = [];
+      List<String> traffic = [];
       try {
         final data = await ApiClient.instance.get('/api/profiles') as Map<String, dynamic>;
-        profiles = (data['bandwidth'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+        tcont = (data['bandwidth'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+        traffic = (data['traffic'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
       } catch (_) {}
       if (!mounted) return;
-      final controller = TextEditingController();
-      String? selected;
-      final value = await showDialog<String>(
+      final manual = TextEditingController();
+      String? selTcont, selUp, selDown;
+      Widget picker(String label, List<String> items, String? value, void Function(String?) onChanged) =>
+          DropdownButtonFormField<String>(
+            initialValue: value,
+            isExpanded: true,
+            decoration: InputDecoration(labelText: label),
+            items: items.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+            onChanged: onChanged,
+          );
+      final chosen = await showDialog<Map<String, String>>(
         context: context,
         builder: (context) => StatefulBuilder(
           builder: (context, setLocal) => AlertDialog(
             title: const Text('Ubah paket'),
-            content: profiles.isEmpty
-                ? TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Profile bandwidth (daftar OLT tidak tersedia)'))
-                : DropdownButtonFormField<String>(
-                    initialValue: selected,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Profile bandwidth OLT'),
-                    items: profiles.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                    onChanged: (v) => setLocal(() => selected = v),
-                  ),
+            content: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (tcont.isEmpty)
+                  TextField(controller: manual, decoration: const InputDecoration(labelText: 'T-CONT profile (daftar OLT tidak tersedia)'))
+                else
+                  picker('T-CONT profile', tcont, selTcont, (v) => setLocal(() => selTcont = v)),
+                if (traffic.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  picker('GEM port upstream', traffic, selUp, (v) => setLocal(() => selUp = v)),
+                  const SizedBox(height: 12),
+                  picker('GEM port downstream', traffic, selDown, (v) => setLocal(() => selDown = v)),
+                ],
+              ]),
+            ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
               FilledButton(
-                onPressed: () => Navigator.pop(context, profiles.isEmpty ? controller.text : selected),
+                onPressed: () => Navigator.pop(context, {
+                  'profile': tcont.isEmpty ? manual.text : (selTcont ?? ''),
+                  'upstream': selUp ?? '',
+                  'downstream': selDown ?? '',
+                }),
                 child: const Text('Lanjut'),
               ),
             ],
           ),
         ),
       );
-      controller.dispose();
-      if (value == null || value.trim().isEmpty) return;
-      values['profile'] = value.trim();
+      manual.dispose();
+      if (chosen == null || chosen['profile']!.trim().isEmpty) return;
+      if ((chosen['upstream']!.isEmpty) != (chosen['downstream']!.isEmpty)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pilih upstream dan downstream bersamaan.')));
+        }
+        return;
+      }
+      values['profile'] = chosen['profile']!.trim();
+      if (chosen['upstream']!.isNotEmpty) {
+        values['upstream'] = chosen['upstream'];
+        values['downstream'] = chosen['downstream'];
+      }
     } else if (field != null) {
       final controller = TextEditingController();
       final value = await showDialog<String>(

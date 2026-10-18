@@ -44,6 +44,13 @@ class MockOltAdapter(OltAdapter):
     async def unconfigured(self) -> list[dict]:
         return [dict(ont) for ont in self.unconfigured_onts]
 
+    async def traffic_profiles_list(self) -> list[str]:
+        return list(self.profiles)
+
+    async def change_package(self, interface: str, profile: str, upstream=None, downstream=None) -> dict:
+        return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile,
+                "upstream": upstream, "downstream": downstream}
+
     async def profiles_list(self) -> list[str]:
         return list(self.profiles)
 

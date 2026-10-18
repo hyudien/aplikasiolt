@@ -22,3 +22,6 @@ class OltAdapter(ABC):
     @abstractmethod
     async def close(self) -> None:
         pass
+
+    async def traffic_profiles_list(self) -> list[str]:
+        return []

@@ -196,6 +196,8 @@ class RegisterRequest(BaseModel):
 class ActionRequest(BaseModel):
     confirm: bool = False
     profile: str | None = Field(default=None, max_length=64)
+    upstream: str | None = Field(default=None, max_length=64)
+    downstream: str | None = Field(default=None, max_length=64)
     vlan: int | None = Field(default=None, ge=1, le=4094)
     username: str | None = Field(default=None, max_length=64)
     password: str | None = Field(default=None, max_length=128)
@@ -438,7 +440,12 @@ async def olt_profiles(_user: str = Depends(current_user)):
         bandwidth = []
     if not bandwidth:
         bandwidth = [item.strip() for item in os.getenv("BANDWIDTH_PROFILES", "").split(",") if item.strip()]
-    return {"bandwidth": bandwidth, "line": [], "service": []}
+    try:
+        async with olt_lock:
+            traffic = await adapter.traffic_profiles_list()
+    except Exception:
+        traffic = []
+    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": []}
 
 
 @app.post("/api/onts/register")
@@ -483,6 +490,8 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
         raise HTTPException(422, "Konfirmasi wajib untuk aksi destruktif")
     ont = get_ont(interface)
     safe_action_text(payload.profile)
+    safe_action_text(payload.upstream)
+    safe_action_text(payload.downstream)
     safe_action_text(payload.username)
     safe_action_text(payload.password)
     if action == "change-package" and not payload.profile:
@@ -513,8 +522,11 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
     if action == "change-package" and not DEMO_MODE:
         try:
             commands.validate_profile(payload.profile)
+            for extra in (payload.upstream, payload.downstream):
+                if extra:
+                    commands.validate_profile(extra)
             async with olt_lock:
-                result = await adapter.change_package(interface, payload.profile)
+                result = await adapter.change_package(interface, payload.profile, payload.upstream, payload.downstream)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         except Exception as exc:
