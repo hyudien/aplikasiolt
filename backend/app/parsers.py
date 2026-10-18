@@ -124,11 +124,12 @@ def parse_onu_running_config(output: str) -> dict:
 def parse_attenuation(output: str) -> str | None:
     """Parse `show pon power attenuation` -> daya terima ONU (baris down, Rx), mis. '-22.3 dBm'."""
     rx = re.compile(r"\bRx[ \t]*:[ \t]*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+    rx_only = re.search(r"\bRx[ \t]*(?:power)?[ \t]*:?[ \t]*(-?\d+(?:\.\d+)?)[ \t]*\(?dbm", output, re.IGNORECASE)
     for direction in ("down", "up"):
         for line in output.splitlines():
             if line.strip().lower().startswith(direction) and (m := rx.search(line)):
                 return f"{m.group(1)} dBm"
-    return None
+    return f"{rx_only.group(1)} dBm" if rx_only else None
 
 
 def parse_onu_mng_config(output: str) -> dict:

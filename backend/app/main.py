@@ -499,7 +499,7 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
                 result = await adapter.attenuation(interface)
         except Exception as exc:
             log_action(user, action, interface, "failed", str(exc)[:200])
-            raise HTTPException(502, "Gagal membaca redaman dari OLT") from exc
+            raise HTTPException(502, "Gagal membaca redaman dari OLT: " + (str(exc) or type(exc).__name__)[:150]) from exc
         if result.get("optical_power"):
             with connect_db() as db:
                 db.execute("UPDATE onts SET optical_power=? WHERE interface=?", (result["optical_power"], interface))

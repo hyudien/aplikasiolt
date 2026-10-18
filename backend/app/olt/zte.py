@@ -1,4 +1,5 @@
 import asyncio
+import re
 import os
 
 import telnetlib3
@@ -93,8 +94,15 @@ class ZteC320Adapter(OltAdapter):
         return results
 
     async def attenuation(self, interface: str) -> dict:
-        output = await self.execute(commands.show_attenuation(interface))
-        return {"optical_power": parsers.parse_attenuation(output)}
+        last = ""
+        for command in commands.show_attenuation_commands(interface):
+            output = await self.execute(command)
+            if power := parsers.parse_attenuation(output):
+                return {"optical_power": power}
+            last = output.strip()
+        if re.search(r"invalid|error|unknown|incomplete", last, re.IGNORECASE):
+            raise RuntimeError("Perintah redaman ditolak OLT: " + last.splitlines()[-2 if len(last.splitlines()) > 1 else -1][:120])
+        return {"optical_power": None}
 
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))

@@ -37,6 +37,21 @@ def show_onu_running(interface: str) -> str:
     return SHOW_ONU_RUNNING.format(interface=validate_interface(interface))
 
 
+SHOW_ATTENUATION_ALT = (
+    "show pon power onu-rx gpon-onu_{interface}",
+    "show pon power attenuation gpon-olt_{pon} {onu_id}",
+)
+
+
+def show_attenuation_commands(interface: str) -> list[str]:
+    """Perintah redaman yang dicoba berurutan; firmware ZTE berbeda-beda."""
+    validate_interface(interface)
+    pon, onu_id = interface.split(":")
+    return [SHOW_ATTENUATION.format(interface=interface)] + [
+        alt.format(interface=interface, pon=pon, onu_id=onu_id) for alt in SHOW_ATTENUATION_ALT
+    ]
+
+
 def show_attenuation(interface: str) -> str:
     return SHOW_ATTENUATION.format(interface=validate_interface(interface))
 
