@@ -116,6 +116,33 @@ class ZteC320Adapter(OltAdapter):
             raise RuntimeError("Perintah redaman ditolak OLT: " + last.splitlines()[-2 if len(last.splitlines()) > 1 else -1][:120])
         return {"optical_power": None}
 
+    async def change_package(self, interface: str, profile: str) -> dict:
+        """Ganti profile bandwidth (T-CONT) ONU; perintah divalidasi dan hasil CLI diperiksa."""
+        commands.validate_interface(interface)
+        running = await self.execute(commands.show_onu_running(interface))
+        indexes = parsers.parse_tcont_indexes(running)
+        if not indexes:
+            raise RuntimeError("T-CONT ONU tidak ditemukan di konfigurasi OLT")
+        sequence = ["configure terminal", commands.ONU_INTERFACE.format(interface=interface)]
+        sequence += [commands.set_tcont_profile(index, profile) for index in indexes]
+        failure = None
+        try:
+            for command in sequence:
+                output = await self.execute(command)
+                if parsers.CLI_ERROR.search(output.replace(command, "")):
+                    failure = output.strip().splitlines()[-2:-1] or [output.strip()]
+                    break
+        finally:
+            for command in ("exit", "exit"):
+                try:
+                    await self.execute(command)
+                except Exception:
+                    break
+        if failure is not None:
+            raise RuntimeError("OLT menolak perintah paket: " + failure[0][:120])
+        await self.execute(commands.SAVE_CONFIG)
+        return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile}
+
     async def unconfigured(self) -> list[dict]:
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
 

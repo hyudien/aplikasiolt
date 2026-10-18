@@ -99,3 +99,26 @@ def test_parse_attenuation():
 def test_parse_attenuation_onu_rx_table():
     out = "Onu                  Rx power\n------------------------\ngpon-onu_1/1/1:2    -25.230(dbm)\nZXAN#"
     assert parse_attenuation(out) == "-25.230 dBm"
+
+
+def test_change_package_zte_sequence():
+    import asyncio
+
+    import pytest
+
+    from app.olt.zte import ZteC320Adapter
+
+    sent = []
+
+    class Fake(ZteC320Adapter):
+        async def execute(self, command):
+            sent.append(command)
+            if command.startswith("show running-config"):
+                return "interface gpon-onu_1/1/1:5\n  name X\n  tcont 1 name T1 profile 20Mbps\n"
+            return "ZXAN(config-if)#"
+
+    result = asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "50Mbps"))
+    assert result["profile"] == "50Mbps"
+    assert sent[1:] == ["configure terminal", "interface gpon-onu_1/1/1:5", "tcont 1 profile 50Mbps", "exit", "exit", "write"]
+    with pytest.raises(ValueError):
+        asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "x;reload"))

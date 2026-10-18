@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
+from . import commands
 from .olt import create_adapter
 
 DB_PATH = os.getenv("DATABASE_PATH", "./data/olt.db")
@@ -504,6 +505,20 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
             with connect_db() as db:
                 db.execute("UPDATE onts SET optical_power=? WHERE interface=?", (result["optical_power"], interface))
         log_action(user, action, interface, "success")
+        return result
+    if action == "change-package" and not DEMO_MODE:
+        try:
+            commands.validate_profile(payload.profile)
+            async with olt_lock:
+                result = await adapter.change_package(interface, payload.profile)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            log_action(user, action, interface, "failed", str(exc)[:200])
+            raise HTTPException(502, "Gagal mengubah paket: " + (str(exc) or type(exc).__name__)[:150]) from exc
+        with connect_db() as db:
+            db.execute("UPDATE onts SET profile=? WHERE interface=?", (payload.profile, interface))
+        log_action(user, action, interface, "success", payload.profile)
         return result
     async with olt_lock:
         if not DEMO_MODE:

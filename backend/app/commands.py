@@ -52,6 +52,19 @@ def show_attenuation_commands(interface: str) -> list[str]:
     ]
 
 
+_PROFILE_RE = re.compile(r"[A-Za-z0-9_.\-]{1,64}")
+
+
+def validate_profile(profile: str) -> str:
+    if not isinstance(profile, str) or not _PROFILE_RE.fullmatch(profile):
+        raise ValueError("Nama profile hanya boleh huruf, angka, titik, garis bawah, dan strip")
+    return profile
+
+
+def set_tcont_profile(index: int, profile: str) -> str:
+    return SET_TCONT.format(index=int(index), profile=validate_profile(profile))
+
+
 def show_attenuation(interface: str) -> str:
     return SHOW_ATTENUATION.format(interface=validate_interface(interface))
 

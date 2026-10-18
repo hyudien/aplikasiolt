@@ -121,6 +121,14 @@ def parse_onu_running_config(output: str) -> dict:
     return result
 
 
+def parse_tcont_indexes(output: str) -> list[int]:
+    """Ambil nomor T-CONT dari running-config ONU (`tcont 1 name T1 profile 20M`)."""
+    return [int(m.group(1)) for m in re.finditer(r"^[ \t]*tcont[ \t]+(\d+)\b.*\bprofile\b", output, re.MULTILINE)]
+
+
+CLI_ERROR = re.compile(r"%\s*error|invalid|incomplete|unknown command|not exist|fail", re.IGNORECASE)
+
+
 def parse_attenuation(output: str) -> str | None:
     """Parse `show pon power attenuation` -> daya terima ONU (baris down, Rx), mis. '-22.3 dBm'."""
     rx = re.compile(r"\bRx[ \t]*:[ \t]*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
