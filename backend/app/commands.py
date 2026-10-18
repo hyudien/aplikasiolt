@@ -4,6 +4,7 @@ import re
 
 SHOW_ONU_STATE = "show gpon onu state"
 SHOW_ONU_INFORMATION = "show pon onu information gpon-olt_{pon}"
+SHOW_TCONT_PROFILES = ("show gpon profile tcont", "show pon profile tcont")
 SHOW_UNCONFIGURED = "show gpon onu uncfg"
 SHOW_ATTENUATION = "show pon power attenuation gpon-onu_{interface}"
 SHOW_DETAIL = "show gpon onu detail-info {interface}"

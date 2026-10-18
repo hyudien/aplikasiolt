@@ -121,6 +121,30 @@ def parse_onu_running_config(output: str) -> dict:
     return result
 
 
+_PROMPT = re.compile(r"^\S*[#>]\s*$|^\S+#\s*show\b", re.IGNORECASE)
+_HEADER_WORDS = {"profile", "name", "index", "type", "fbw", "abw", "mbw", "id", "total", "show"}
+
+
+def parse_tcont_profiles(output: str) -> list[str]:
+    """Nama T-CONT/DBA profile dari `show gpon profile tcont` (tabel atau `Profile name: X`)."""
+    names: list[str] = []
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line or set(line) <= set("-=+ ") or _PROMPT.match(line):
+            continue
+        if m := re.match(r"^(?:tcont[ \t]+)?profile[ \t]+name[ \t]*:[ \t]*(\S+)", line, re.IGNORECASE):
+            name = m.group(1)
+        else:
+            tokens = line.split()
+            name = tokens[1] if len(tokens) > 2 and tokens[0].isdigit() else tokens[0]
+            # baris data tabel punya kolom angka (bandwidth); baris judul/teks lain tidak
+            if not any(re.fullmatch(r"\d+(?:\.\d+)?[kKmMgG]?(?:bps)?", t) for t in tokens[1:]):
+                continue
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}", name) and name.lower() not in _HEADER_WORDS and name not in names:
+            names.append(name)
+    return names
+
+
 def parse_tcont_indexes(output: str) -> list[int]:
     """Ambil nomor T-CONT dari running-config ONU (`tcont 1 name T1 profile 20M`)."""
     return [int(m.group(1)) for m in re.finditer(r"^[ \t]*tcont[ \t]+(\d+)\b.*\bprofile\b", output, re.MULTILINE)]

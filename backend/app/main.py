@@ -431,7 +431,11 @@ async def refresh_ont(interface: str, user: str = Depends(current_user)):
 
 @app.get("/api/profiles")
 async def olt_profiles(_user: str = Depends(current_user)):
-    bandwidth = await adapter.profiles_list()
+    try:
+        async with olt_lock:
+            bandwidth = await adapter.profiles_list()
+    except Exception:
+        bandwidth = []
     if not bandwidth:
         bandwidth = [item.strip() for item in os.getenv("BANDWIDTH_PROFILES", "").split(",") if item.strip()]
     return {"bandwidth": bandwidth, "line": [], "service": []}

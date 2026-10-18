@@ -39,6 +39,42 @@ class _OntDetailPageState extends State<OntDetailPage> {
       password.dispose();
       if (credentials == null || credentials['username']!.trim().isEmpty || credentials['password']!.isEmpty) return;
       values.addAll(credentials);
+    } else if (action == 'change-package') {
+      List<String> profiles = [];
+      try {
+        final data = await ApiClient.instance.get('/api/profiles') as Map<String, dynamic>;
+        profiles = (data['bandwidth'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      } catch (_) {}
+      if (!mounted) return;
+      final controller = TextEditingController();
+      String? selected;
+      final value = await showDialog<String>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Ubah paket'),
+            content: profiles.isEmpty
+                ? TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Profile bandwidth (daftar OLT tidak tersedia)'))
+                : DropdownButtonFormField<String>(
+                    initialValue: selected,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Profile bandwidth OLT'),
+                    items: profiles.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                    onChanged: (v) => setLocal(() => selected = v),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, profiles.isEmpty ? controller.text : selected),
+                child: const Text('Lanjut'),
+              ),
+            ],
+          ),
+        ),
+      );
+      controller.dispose();
+      if (value == null || value.trim().isEmpty) return;
+      values['profile'] = value.trim();
     } else if (field != null) {
       final controller = TextEditingController();
       final value = await showDialog<String>(

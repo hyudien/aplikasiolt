@@ -147,7 +147,14 @@ class ZteC320Adapter(OltAdapter):
         return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
 
     async def profiles_list(self) -> list[str]:
-        # TODO: command profile harus dicocokkan dengan output V2.1.0.
+        """Daftar T-CONT profile yang ada di OLT (tidak gagal bila perintah tidak didukung)."""
+        for command in commands.SHOW_TCONT_PROFILES:
+            try:
+                names = parsers.parse_tcont_profiles(await self.execute(command))
+            except Exception:
+                continue
+            if names:
+                return names
         return []
 
     async def close(self):

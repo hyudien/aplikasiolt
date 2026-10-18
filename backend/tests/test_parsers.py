@@ -1,4 +1,4 @@
-from app.parsers import parse_attenuation, parse_onu_information, parse_onu_state, parse_pon_id, parse_unconfigured
+from app.parsers import parse_attenuation, parse_tcont_profiles, parse_onu_information, parse_onu_state, parse_pon_id, parse_unconfigured
 
 
 def test_parse_onu_state_recognizes_statuses_and_ignores_headers():
@@ -128,3 +128,16 @@ def test_parse_attenuation_rejects_implausible_values():
     assert parse_attenuation("down    Tx :6.100(dbm)   Rx:6.000(dbm)   6.0(dB)") is None
     assert parse_attenuation("up      Rx :-29.1(dbm)   Tx:6.0(dbm)    6.0(dB)") is None
     assert parse_attenuation("gpon-onu_1/1/1:5    6.000(dbm)") is None
+
+
+def test_parse_tcont_profiles_table_and_prompt():
+    out = """show gpon profile tcont
+Profile name      Type  FBW    ABW    MBW
+--------------------------------------------
+default           4     0      0      1000000
+20Mbps            4     0      0      20480
+50Mbps            4     0      0      51200
+ZXAN#"""
+    assert parse_tcont_profiles(out) == ["default", "20Mbps", "50Mbps"]
+    assert parse_tcont_profiles("Profile name: UP-10M\nType: 4\n") == ["UP-10M"]
+    assert parse_tcont_profiles("% Invalid input detected\nZXAN#") == []
