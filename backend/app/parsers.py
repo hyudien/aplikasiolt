@@ -129,7 +129,11 @@ def parse_attenuation(output: str) -> str | None:
         for line in output.splitlines():
             if line.strip().lower().startswith(direction) and (m := rx.search(line)):
                 return f"{m.group(1)} dBm"
-    return f"{rx_only.group(1)} dBm" if rx_only else None
+    if rx_only:
+        return f"{rx_only.group(1)} dBm"
+    if m := re.search(r"^[ \t]*gpon-onu_\S+[ \t]+(-?\d+(?:\.\d+)?)[ \t]*\(?dbm", output, re.IGNORECASE | re.MULTILINE):
+        return f"{m.group(1)} dBm"
+    return None
 
 
 def parse_onu_mng_config(output: str) -> dict:

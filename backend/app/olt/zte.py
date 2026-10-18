@@ -35,18 +35,18 @@ class ZteC320Adapter(OltAdapter):
                     raise
         if self.reader is None or self.writer is None:
             raise last_error or ConnectionError("Koneksi Telnet gagal")
-        await self._read_until_prompt()
+        await self._read_until_prompt(login=True)
         self.writer.write(self.username + "\n")
-        await self._read_until_prompt()
+        await self._read_until_prompt(login=True)
         self.writer.write(self.password + "\n")
-        response = await self._read_until_prompt()
+        response = await self._read_until_prompt(login=True)
         if "incorrect" in response.lower() or "failed" in response.lower():
             await self.close()
             raise PermissionError("auth failed")
         self.writer.write("terminal length 0\n")
-        await self._read_until_prompt()
+        await self._read_until_prompt(login=True)
 
-    async def _read_until_prompt(self) -> str:
+    async def _read_until_prompt(self, login: bool = False) -> str:
         result = ""
         while len(result) < 128_000:
             chunk = await asyncio.wait_for(self.reader.read(4096), timeout=self.timeout)
@@ -56,7 +56,8 @@ class ZteC320Adapter(OltAdapter):
                 self.writer.write(" ")
             result += chunk.replace("--More--", "")
             lines = result.rstrip().splitlines()
-            if lines and lines[-1].strip().endswith(("#", ">", ":")):
+            # Setelah login hanya "#"/">" yang prompt; ":" bisa ujung echo perintah (mis. gpon-onu_1/1/1:)
+            if lines and lines[-1].strip().endswith(("#", ">", ":") if login else ("#", ">")):
                 break
         return result
 
