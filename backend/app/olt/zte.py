@@ -123,16 +123,15 @@ class ZteC320Adapter(OltAdapter):
         if bool(upstream) != bool(downstream):
             raise ValueError("Profile upstream dan downstream harus diisi bersamaan")
         running = await self.execute(commands.show_onu_running(interface))
-        tconts = parsers.parse_tcont_indexes(running)
-        if not tconts:
+        target = parsers.pick_primary_service(parsers.parse_onu_services(running))
+        if target is None:
             raise RuntimeError("T-CONT ONU tidak ditemukan di konfigurasi OLT")
-        sequence = ["configure terminal", commands.ONU_INTERFACE.format(interface=interface)]
-        sequence += [commands.set_tcont_profile(index, profile) for index in tconts]
+        sequence = ["configure terminal", commands.ONU_INTERFACE.format(interface=interface),
+                    commands.set_tcont_profile(target["tcont"], profile)]
         if upstream:
-            gemports = parsers.parse_gemport_indexes(running)
-            if not gemports:
-                raise RuntimeError("GEM port ONU tidak ditemukan di konfigurasi OLT")
-            sequence += [commands.set_gemport_limit(index, upstream, downstream) for index in gemports]
+            if not target["gemports"]:
+                raise RuntimeError("GEM port untuk T-CONT layanan internet tidak ditemukan")
+            sequence += [commands.set_gemport_limit(index, upstream, downstream) for index in target["gemports"]]
         failure = None
         try:
             for command in sequence:

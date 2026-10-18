@@ -114,7 +114,7 @@ def test_change_package_zte_sequence():
         async def execute(self, command):
             sent.append(command)
             if command.startswith("show running-config"):
-                return "interface gpon-onu_1/1/1:5\n  name X\n  tcont 1 name T1 profile 20Mbps\n  gemport 1 name G1 tcont 1\n  gemport 1 traffic-limit upstream UP-20M downstream DOWN-20M\n"
+                return "interface gpon-onu_1/1/1:5\n  name X\n  tcont 1 name PPP profile UPto-100M\n  tcont 2 name BRG profile UPto-10M\n  gemport 1 name PPP tcont 1\n  gemport 1 traffic-limit upstream Upto-100M downstream Upto-100M\n  gemport 2 name BRG tcont 2\n  gemport 2 traffic-limit upstream Upto-10M downstream Upto-10M\n"
             return "ZXAN(config-if)#"
 
     result = asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "50Mbps"))
@@ -123,6 +123,7 @@ def test_change_package_zte_sequence():
     sent.clear()
     asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "50Mbps", "UP-50M", "DOWN-50M"))
     assert "gemport 1 traffic-limit upstream UP-50M downstream DOWN-50M" in sent
+    assert not any(c.startswith(("tcont 2", "gemport 2")) for c in sent)
     with pytest.raises(ValueError):
         asyncio.run(Fake("h", 23, "u", "p").change_package("1/1/1:5", "x;reload"))
 
@@ -144,3 +145,21 @@ ZXAN#"""
     assert parse_tcont_profiles(out) == ["default", "20Mbps", "50Mbps"]
     assert parse_tcont_profiles("Profile name: UP-10M\nType: 4\n") == ["UP-10M"]
     assert parse_tcont_profiles("% Invalid input detected\nZXAN#") == []
+
+
+def test_parse_profiles_real_olt_format():
+    traffic = """ZXAN#show gpon profile traffic
+Profile name  :default
+  SIR(kbps)            PIR(kbps)            CBS(kbytes)         PBS(kbytes)
+
+ 9953280              9953280              default             default
+
+
+Profile name  :D-50M
+  SIR(kbps)            PIR(kbps)
+
+ 51200                51200                default             default
+"""
+    assert parse_tcont_profiles(traffic) == ["default", "D-50M"]
+    tcont = "Profile name :default\n Type  FBW(kbps)\n 1     10000   0   0   N/A  N/A\n\nProfile name :10Mbps\n Type FBW\n 1  10240  0  0  N/A  N/A\n"
+    assert parse_tcont_profiles(tcont) == ["default", "10Mbps"]

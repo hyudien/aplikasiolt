@@ -126,23 +126,45 @@ _HEADER_WORDS = {"profile", "name", "index", "type", "fbw", "abw", "mbw", "id", 
 
 
 def parse_tcont_profiles(output: str) -> list[str]:
-    """Nama T-CONT/DBA profile dari `show gpon profile tcont` (tabel atau `Profile name: X`)."""
+    """Nama profile dari `show gpon profile tcont|traffic` (format `Profile name :X` per blok)."""
     names: list[str] = []
+    for m in re.finditer(r"^[ \t]*(?:tcont[ \t]+)?profile[ \t]+name[ \t]*:[ \t]*(\S+)", output, re.IGNORECASE | re.MULTILINE):
+        if m.group(1) not in names and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}", m.group(1)):
+            names.append(m.group(1))
+    if names:
+        return names
+    # Fallback tabel satu baris per profile: `20Mbps  4  0  0  20480`
     for raw in output.splitlines():
-        line = raw.strip()
-        if not line or set(line) <= set("-=+ ") or _PROMPT.match(line):
-            continue
-        if m := re.match(r"^(?:tcont[ \t]+)?profile[ \t]+name[ \t]*:[ \t]*(\S+)", line, re.IGNORECASE):
-            name = m.group(1)
-        else:
-            tokens = line.split()
-            name = tokens[1] if len(tokens) > 2 and tokens[0].isdigit() else tokens[0]
-            # baris data tabel punya kolom angka (bandwidth); baris judul/teks lain tidak
-            if not any(re.fullmatch(r"\d+(?:\.\d+)?[kKmMgG]?(?:bps)?", t) for t in tokens[1:]):
-                continue
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}", name) and name.lower() not in _HEADER_WORDS and name not in names:
-            names.append(name)
+        tokens = raw.split()
+        if (len(tokens) > 2 and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}", tokens[0]) and not tokens[0].isdigit()
+                and tokens[0].lower() not in _HEADER_WORDS and not tokens[0].endswith("#")
+                and all(re.fullmatch(r"\d+(?:\.\d+)?", t) for t in tokens[2:]) and tokens[0] not in names):
+            names.append(tokens[0])
     return names
+
+
+def parse_onu_services(output: str) -> list[dict]:
+    """T-CONT ONU beserta nama, profile, dan GEM port yang terikat (`gemport N name X tcont M`)."""
+    tconts: dict[int, dict] = {}
+    for m in re.finditer(r"^[ \t]*tcont[ \t]+(\d+)\b(.*)$", output, re.MULTILINE):
+        rest = m.group(2)
+        name = re.search(r"\bname[ \t]+(\S+)", rest)
+        profile = re.search(r"\bprofile[ \t]+(\S+)", rest)
+        if profile:
+            tconts[int(m.group(1))] = {"tcont": int(m.group(1)), "name": name.group(1) if name else "",
+                                       "profile": profile.group(1), "gemports": []}
+    for m in re.finditer(r"^[ \t]*gemport[ \t]+(\d+)\b.*?\btcont[ \t]+(\d+)\b", output, re.MULTILINE):
+        entry = tconts.get(int(m.group(2)))
+        if entry and int(m.group(1)) not in entry["gemports"]:
+            entry["gemports"].append(int(m.group(1)))
+    return [tconts[k] for k in sorted(tconts)]
+
+
+def pick_primary_service(services: list[dict]) -> dict | None:
+    """Layanan internet: abaikan T-CONT bridge (nama BRG/BRIDGE), ambil nomor terkecil."""
+    internet = [item for item in services if not re.search(r"brg|bridge", item["name"], re.IGNORECASE)]
+    candidates = internet or services
+    return candidates[0] if candidates else None
 
 
 def parse_gemport_indexes(output: str) -> list[int]:
