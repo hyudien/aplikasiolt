@@ -406,6 +406,28 @@ async def ont_detail(interface: str, _user: str = Depends(current_user)):
     return ont
 
 
+@app.post("/api/onts/{interface:path}/refresh")
+async def refresh_ont(interface: str, user: str = Depends(current_user)):
+    """Perbarui satu ONT dari OLT: status terbaru dan data pelanggan (tanpa password)."""
+    get_ont(interface)
+    try:
+        async with olt_lock:
+            states = await adapter.all_onts()
+            config = clean_ont_config(await adapter.ont_config(interface))
+    except Exception as exc:
+        log_action(user, "refresh-ont", interface, "failed", str(exc)[:200])
+        raise HTTPException(502, "Gagal membaca data dari OLT") from exc
+    state = next((item for item in states if item["interface"] == interface), None)
+    with connect_db() as db:
+        if state:
+            db.execute("UPDATE onts SET status=?,reason=?,last_seen=? WHERE interface=?",
+                       (state["status"], state.get("reason", ""), datetime.now(timezone.utc).isoformat(), interface))
+        if config:
+            store_ont_config(db, interface, config)
+    log_action(user, "refresh-ont", interface, "success")
+    return get_ont(interface)
+
+
 @app.get("/api/profiles")
 async def olt_profiles(_user: str = Depends(current_user)):
     bandwidth = await adapter.profiles_list()

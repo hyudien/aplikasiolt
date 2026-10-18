@@ -84,3 +84,16 @@ def test_search_enrich_and_sync_preserve(tmp_path, monkeypatch):
         mock_ont.update(saved)
         row = client.get("/api/onts/1/1/1:1").json()
         assert row["name"] == "Pelanggan Contoh" and row["vlan"] == 100 and row["profile"] == "100M"
+
+
+def test_refresh_single_ont(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "test3.db"))
+    with TestClient(main.app) as client:
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).json()["access_token"]
+        client.headers["Authorization"] = "Bearer " + token
+        client.post("/api/sync")
+        main.adapter.onts[1]["status"], main.adapter.onts[1]["reason"] = "online", "working"
+        result = client.post("/api/onts/1/1/1:2/refresh")
+        assert result.status_code == 200 and result.json()["status"] == "online"
+        assert client.post("/api/onts/9/9/9:9/refresh").status_code == 404
+        main.adapter.onts[1]["status"], main.adapter.onts[1]["reason"] = "los", "LOS"

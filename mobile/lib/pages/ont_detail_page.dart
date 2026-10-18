@@ -89,6 +89,18 @@ class _OntDetailPageState extends State<OntDetailPage> {
     }
   }
 
+  Future<void> _refresh() async {
+    setState(() => _busy = true);
+    try {
+      await ApiClient.instance.post('/api/onts/${widget.interface}/refresh');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data ONT diperbarui dari OLT.')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Detail ONT')),
@@ -108,6 +120,8 @@ class _OntDetailPageState extends State<OntDetailPage> {
                 _info('Mode', ont['mode'] ?? '-'), _info('Daya optik', ont['optical_power'] ?? 'Belum tersedia'),
               ]))),
               if (_busy) const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              FilledButton.icon(onPressed: _busy ? null : _refresh, icon: const Icon(Icons.refresh), label: const Text('Perbarui data')),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 _button('Cek redaman', Icons.bolt, () => _action('attenuation')),
