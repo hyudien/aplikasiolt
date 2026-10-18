@@ -547,24 +547,18 @@ async def sync_data(scope: str = "full", user: str = Depends(current_user)):
         if scope != "full":
             onts = [ont for ont in onts if ont["pon"] == scope]
         with connect_db() as db:
-            preserved = {
-                str(row["serial"]).upper(): clean_ont_config(dict(row))
-                for row in db.execute("SELECT serial,name,pppoe_user,vlan,profile,mode FROM onts")
-            }
-            onts = [
-                {**ont, **{k: v for k, v in preserved.get(str(ont["serial"]).upper(), {}).items()
-                           if ont.get(k) in (None, "")}}
-                for ont in onts
-            ]
             if scope == "full":
-                db.execute("DELETE FROM onts")
                 db.execute("DELETE FROM pons")
+                seen = [ont["interface"] for ont in onts]
+                db.execute("CREATE TEMP TABLE IF NOT EXISTS seen_onts(interface TEXT PRIMARY KEY)")
+                db.execute("DELETE FROM seen_onts")
+                db.executemany("INSERT OR IGNORE INTO seen_onts VALUES(?)", [(i,) for i in seen])
+                db.execute("DELETE FROM onts WHERE interface NOT IN (SELECT interface FROM seen_onts)")
             for ont in onts:
                 db.execute(
                     """INSERT INTO onts(interface,pon,onu_id,serial,name,pppoe_user,status,reason,vlan,profile,mode,optical_power,last_seen)
                     VALUES(:interface,:pon,:onu_id,:serial,:name,:pppoe_user,:status,:reason,:vlan,:profile,:mode,:optical_power,:last_seen)
-                    ON CONFLICT(interface) DO UPDATE SET serial=:serial,name=:name,pppoe_user=:pppoe_user,status=:status,
-                    reason=:reason,vlan=:vlan,profile=:profile,mode=:mode,optical_power=:optical_power,last_seen=:last_seen""",
+                    ON CONFLICT(interface) DO UPDATE SET status=:status,reason=:reason,last_seen=:last_seen""",
                     {"name": "", "pppoe_user": "", "vlan": None, "profile": "", "mode": "", "optical_power": None,
                      "reason": "", **ont, "last_seen": started},
                 )
