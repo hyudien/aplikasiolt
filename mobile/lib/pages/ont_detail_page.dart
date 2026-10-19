@@ -104,6 +104,44 @@ class _OntDetailPageState extends State<OntDetailPage> {
         values['upstream'] = chosen['upstream'];
         values['downstream'] = chosen['downstream'];
       }
+    } else if (action == 'change-vlan') {
+      List<int> vlans = [];
+      try {
+        final data = await ApiClient.instance.get('/api/profiles') as Map<String, dynamic>;
+        vlans = (data['vlans'] as List<dynamic>? ?? []).map((e) => int.tryParse(e.toString()) ?? 0).where((v) => v > 0).toList();
+      } catch (_) {}
+      if (!mounted) return;
+      final manual = TextEditingController();
+      int? selected;
+      final chosen = await showDialog<int>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => AlertDialog(
+            title: const Text('Ubah VLAN'),
+            content: vlans.isEmpty
+                ? TextField(
+                    controller: manual,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'VLAN (daftar OLT tidak tersedia)'))
+                : DropdownButtonFormField<int>(
+                    initialValue: selected,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'VLAN dari OLT'),
+                    items: vlans.map((v) => DropdownMenuItem(value: v, child: Text('$v'))).toList(),
+                    onChanged: (v) => setLocal(() => selected = v),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, vlans.isEmpty ? int.tryParse(manual.text.trim()) : selected),
+                  child: const Text('Lanjut')),
+            ],
+          ),
+        ),
+      );
+      manual.dispose();
+      if (chosen == null) return;
+      values['vlan'] = chosen;
     } else if (field != null) {
       final controller = TextEditingController();
       final value = await showDialog<String>(
@@ -191,7 +229,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
               Wrap(spacing: 8, runSpacing: 8, children: [
                 _button('Cek redaman', Icons.bolt, () => _action('attenuation')),
                 _button('Ubah paket', Icons.speed, () => _action('change-package', field: 'profile', label: 'Profile bandwidth')),
-                _button('Ubah VLAN', Icons.lan, () => _action('change-vlan', field: 'vlan', label: 'VLAN')),
+                _button('Ubah VLAN', Icons.lan, () => _action('change-vlan')),
                 _button('Ubah PPPoE', Icons.person, () => _action('change-pppoe')),
                 _button('Ganti ONT', Icons.swap_horiz, () => _action('replace', confirm: true, field: 'serial', label: 'SN ONT baru')),
                 _button('Enable remote', Icons.settings_remote, () => _action('remote-on')),
