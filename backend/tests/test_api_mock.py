@@ -97,3 +97,19 @@ def test_refresh_single_ont(tmp_path, monkeypatch):
         assert result.status_code == 200 and result.json()["status"] == "online"
         assert client.post("/api/onts/9/9/9:9/refresh").status_code == 404
         main.adapter.onts[1]["status"], main.adapter.onts[1]["reason"] = "los", "LOS"
+
+
+def test_change_pppoe_mock_validation_and_no_password_leak(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "test.db"))
+    with TestClient(main.app) as client:
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).json()["access_token"]
+        client.headers["Authorization"] = "Bearer " + token
+        url = "/api/onts/1/1/1:2/actions/change-pppoe"
+        assert client.post(url, json={"username": "baru01"}).status_code == 422
+        assert client.post(url, json={"username": "baru\n01", "password": "x"}).status_code == 422
+        assert client.post(url, json={"username": "pelanggan01", "password": "x"}).status_code == 409
+        response = client.post(url, json={"username": "baru01", "password": "rahasia-baru"})
+        assert response.status_code == 200
+        assert "rahasia-baru" not in response.text
+        assert client.get("/api/onts/1/1/1:2").json()["pppoe_user"] == "baru01"
+        assert "rahasia-baru" not in client.get("/api/logs").text

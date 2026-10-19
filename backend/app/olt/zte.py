@@ -151,6 +151,33 @@ class ZteC320Adapter(OltAdapter):
         return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile,
                 "upstream": upstream, "downstream": downstream}
 
+    async def change_pppoe(self, interface: str, username: str, password: str) -> dict:
+        """Ubah username/password PPPoE pada wan-ip yang sudah ada (indeks diambil dari konfigurasi ONU)."""
+        commands.validate_interface(interface)
+        mng = await self.execute(commands.show_onu_mng(interface))
+        match = re.search(r"\bwan-ip[ \t]+(\d+)[ \t]+mode[ \t]+pppoe\b", mng)
+        index = int(match.group(1)) if match else 1
+        command = commands.set_pppoe(index, username, password)
+        sequence = ["configure terminal", commands.REMOTE_MANAGEMENT.format(interface=interface), command]
+        failure = None
+        try:
+            for item in sequence:
+                output = await self.execute(item)
+                if parsers.CLI_ERROR.search(output.replace(item, "")):
+                    failure = (output.replace(password, "***").strip().splitlines()[-2:-1]
+                               or [output.replace(password, "***").strip()])
+                    break
+        finally:
+            for item in ("exit", "exit"):
+                try:
+                    await self.execute(item)
+                except Exception:
+                    break
+        if failure is not None:
+            raise RuntimeError("OLT menolak perintah PPPoE: " + failure[0][:120])
+        await self.execute(commands.SAVE_CONFIG)
+        return {"success": True, "message": f"PPPoE diubah ke {username}", "pppoe_user": username}
+
     async def traffic_profiles_list(self) -> list[str]:
         """Daftar traffic profile (untuk gemport upstream/downstream) yang ada di OLT."""
         for command in commands.SHOW_TRAFFIC_PROFILES:

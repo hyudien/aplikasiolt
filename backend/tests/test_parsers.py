@@ -179,3 +179,41 @@ ONU         SN report      ONU ID Auth configuration State              times
     result = parse_onu_information(output)
     assert [o["serial"] for o in result] == ["HWTC070D11FF", "ZTEGD4A45D7D", "ZTEGD16500C0"]
     assert [o["status"] for o in result] == ["los", "online", "online"]
+
+
+def test_set_pppoe_validation():
+    import pytest
+    from app import commands
+    assert commands.set_pppoe(1, "user@isp", "p4ss") == "wan-ip 1 mode pppoe username user@isp password p4ss"
+    for user, pw in (("bad user", "x"), ("u", "has space"), ("u", ""), ("", "x")):
+        with pytest.raises(ValueError):
+            commands.set_pppoe(1, user, pw)
+
+
+def test_zte_change_pppoe_sequence_and_redaction():
+    import asyncio
+    import pytest
+    from app.olt.zte import ZteC320Adapter
+
+    class Fake(ZteC320Adapter):
+        def __init__(self, reject=False):
+            super().__init__("h", 23, "u", "p")
+            self.sent, self.reject = [], reject
+
+        async def execute(self, command):
+            self.sent.append(command)
+            if command.startswith("show onu running"):
+                return "wan-ip 2 mode pppoe username old\nZXAN#"
+            if self.reject and command.startswith("wan-ip"):
+                return command + "\n%Error 20201: Invalid input secretpw\nZXAN#"
+            return "ok\nZXAN#"
+
+    fake = Fake()
+    asyncio.run(fake.change_pppoe("1/1/1:2", "new", "secretpw"))
+    assert "wan-ip 2 mode pppoe username new password secretpw" in fake.sent
+    assert fake.sent[-1] == "write"
+    fake = Fake(reject=True)
+    with pytest.raises(RuntimeError) as exc:
+        asyncio.run(fake.change_pppoe("1/1/1:2", "new", "secretpw"))
+    assert "secretpw" not in str(exc.value)
+    assert "write" not in fake.sent

@@ -62,11 +62,11 @@ class MockOltAdapter(OltAdapter):
             ont["serial"] = data["serial"].upper()
         elif action in {"change-package", "change-vlan", "change-pppoe"}:
             fields = {
-                "change-package": {"profile": data["profile"]},
-                "change-vlan": {"vlan": data["vlan"]},
-                "change-pppoe": {"pppoe_user": data["username"]},
+                "change-package": lambda: {"profile": data["profile"]},
+                "change-vlan": lambda: {"vlan": data["vlan"]},
+                "change-pppoe": lambda: {"pppoe_user": data["username"]},
             }
-            ont.update(fields[action])
+            ont.update(fields[action]())
         elif action == "reboot":
             ont["status"] = "offline"
             ont["reason"] = "rebooting"

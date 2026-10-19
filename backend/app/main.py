@@ -536,6 +536,20 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
             db.execute("UPDATE onts SET profile=? WHERE interface=?", (payload.profile, interface))
         log_action(user, action, interface, "success", payload.profile)
         return result
+    if action == "change-pppoe" and not DEMO_MODE:
+        try:
+            commands.set_pppoe(1, payload.username, payload.password)
+            async with olt_lock:
+                result = await adapter.change_pppoe(interface, payload.username, payload.password)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            log_action(user, action, interface, "failed", "perintah PPPoE gagal")
+            raise HTTPException(502, "Gagal mengubah PPPoE: " + (str(exc) or type(exc).__name__)[:150]) from exc
+        with connect_db() as db:
+            db.execute("UPDATE onts SET pppoe_user=? WHERE interface=?", (payload.username, interface))
+        log_action(user, action, interface, "success", payload.username)
+        return result
     async with olt_lock:
         if not DEMO_MODE:
             log_action(user, action, interface, "failed", "CLI write belum diimplementasikan")

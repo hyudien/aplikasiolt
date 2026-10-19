@@ -19,7 +19,7 @@ SET_GEMPORT = "gemport {index} tcont {tcont}"
 SET_SERVICE_PORT = "service-port {index} vport {vport} user-vlan {vlan} vlan {vlan}"
 SET_PPPoE = "wan-ip {index} mode pppoe username {username} password {password}"
 SET_VLAN = "vlan port eth_0/1 mode tag vlan {vlan}"
-REMOTE_MANAGEMENT = "pon-onu-mng {interface}"
+REMOTE_MANAGEMENT = "pon-onu-mng gpon-onu_{interface}"
 REBOOT_ONU = "pon-onu-mng {interface} reboot"
 DELETE_ONU = "no onu {onu_id}"
 SAVE_CONFIG = "write"
@@ -80,6 +80,19 @@ def show_attenuation(interface: str) -> str:
 
 def show_onu_mng(interface: str) -> str:
     return SHOW_ONU_MNG.format(interface=validate_interface(interface))
+
+_PPPOE_USER_RE = re.compile(r"[A-Za-z0-9_.@\-]{1,64}")
+_PPPOE_PASSWORD_RE = re.compile(r"[\x21-\x7e]{1,128}")
+
+
+def set_pppoe(index: int, username: str, password: str) -> str:
+    """Bangun perintah wan-ip PPPoE (dijalankan di mode pon-onu-mng); input divalidasi ketat."""
+    if not isinstance(username, str) or not _PPPOE_USER_RE.fullmatch(username):
+        raise ValueError("Username PPPoE hanya boleh huruf, angka, titik, garis bawah, strip, dan @")
+    if not isinstance(password, str) or not _PPPOE_PASSWORD_RE.fullmatch(password):
+        raise ValueError("Password PPPoE hanya boleh karakter ASCII tercetak tanpa spasi")
+    return SET_PPPoE.format(index=int(index), username=username, password=password)
+
 
 # TODO: Format service-port, T-CONT/GEM, VLAN, PPPoE, remote management, and
 # reboot commands against the exact C320 V2.1.0 release before enabling writes.
