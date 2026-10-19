@@ -51,6 +51,9 @@ class MockOltAdapter(OltAdapter):
         return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile,
                 "upstream": upstream, "downstream": downstream}
 
+    async def vlans_list(self) -> list[int]:
+        return sorted({100, 200, *(o["vlan"] for o in self.onts if o.get("vlan"))})
+
     async def profiles_list(self) -> list[str]:
         return list(self.profiles)
 

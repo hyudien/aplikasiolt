@@ -230,3 +230,19 @@ def parse_onu_mng_config(output: str) -> dict:
     if m := re.search(r"\bservice[ \t]+\S+[ \t]+gemport[ \t]+\d+[ \t]+vlan[ \t]+(\d+)", output):
         result["vlan"] = int(m.group(1))
     return result
+
+
+def parse_vlan_list(output: str) -> list[int]:
+    """VLAN terdaftar dari `show vlan brief`: baris `100 name ...` atau daftar `1,100-105`."""
+    found: set[int] = set()
+    for raw in output.splitlines():
+        line = raw.strip()
+        if re.fullmatch(r"(?:vlan[ \t]*(?:list)?[ \t]*:?[ \t]*)?\d+(?:-\d+)?(?:[ \t]*,[ \t]*\d+(?:-\d+)?)*", line, re.IGNORECASE) \
+                or re.match(r"vlan[ \t]*(?:list)?[ \t]*:", line, re.IGNORECASE):
+            for a, b in re.findall(r"(\d+)(?:-(\d+))?", line.split(":", 1)[-1] if ":" in line else line):
+                lo, hi = int(a), int(b or a)
+                if 1 <= lo <= hi <= 4094 and hi - lo < 4094:
+                    found.update(range(lo, hi + 1))
+        elif (m := re.match(r"(\d{1,4})[ \t]+\S", line)) and 1 <= int(m.group(1)) <= 4094:
+            found.add(int(m.group(1)))
+    return sorted(found)

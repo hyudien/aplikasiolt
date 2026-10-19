@@ -125,3 +125,4 @@ def test_change_vlan_mock(tmp_path, monkeypatch):
         assert client.post(url, json={"vlan": 5000}).status_code == 422
         assert client.post(url, json={"vlan": 200}).status_code == 200
         assert client.get("/api/onts/1/1/1:2").json()["vlan"] == 200
+        assert 200 in client.get("/api/profiles").json()["vlans"]

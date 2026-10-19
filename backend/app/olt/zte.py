@@ -212,6 +212,17 @@ class ZteC320Adapter(OltAdapter):
         await self.execute(commands.SAVE_CONFIG)
         return {"success": True, "message": f"VLAN diubah ke {vlan}", "vlan": vlan}
 
+    async def vlans_list(self) -> list[int]:
+        """Daftar VLAN yang terdaftar di OLT (kosong bila tidak terbaca)."""
+        for command in commands.SHOW_VLANS:
+            try:
+                vlans = parsers.parse_vlan_list(await self.execute(command))
+            except Exception:
+                continue
+            if vlans:
+                return vlans
+        return []
+
     async def traffic_profiles_list(self) -> list[str]:
         """Daftar traffic profile (untuk gemport upstream/downstream) yang ada di OLT."""
         for command in commands.SHOW_TRAFFIC_PROFILES:

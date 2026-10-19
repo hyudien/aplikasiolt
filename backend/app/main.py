@@ -445,7 +445,12 @@ async def olt_profiles(_user: str = Depends(current_user)):
             traffic = await adapter.traffic_profiles_list()
     except Exception:
         traffic = []
-    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": []}
+    try:
+        async with olt_lock:
+            vlans = await adapter.vlans_list()
+    except Exception:
+        vlans = []
+    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": [], "vlans": vlans}
 
 
 @app.post("/api/onts/register")
@@ -539,6 +544,9 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
     if action == "change-vlan" and not DEMO_MODE:
         try:
             async with olt_lock:
+                known_vlans = await adapter.vlans_list()
+                if known_vlans and payload.vlan not in known_vlans:
+                    raise ValueError(f"VLAN {payload.vlan} tidak terdaftar di OLT")
                 result = await adapter.change_vlan(interface, payload.vlan)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
