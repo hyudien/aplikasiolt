@@ -111,35 +111,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
         vlans = (data['vlans'] as List<dynamic>? ?? []).map((e) => int.tryParse(e.toString()) ?? 0).where((v) => v > 0).toList();
       } catch (_) {}
       if (!mounted) return;
-      final manual = TextEditingController();
-      int? selected;
-      final chosen = await showDialog<int>(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setLocal) => AlertDialog(
-            title: const Text('Ubah VLAN'),
-            content: vlans.isEmpty
-                ? TextField(
-                    controller: manual,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'VLAN (daftar OLT tidak tersedia)'))
-                : DropdownButtonFormField<int>(
-                    initialValue: selected,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'VLAN dari OLT'),
-                    items: vlans.map((v) => DropdownMenuItem(value: v, child: Text('$v'))).toList(),
-                    onChanged: (v) => setLocal(() => selected = v),
-                  ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
-              FilledButton(
-                  onPressed: () => Navigator.pop(context, vlans.isEmpty ? int.tryParse(manual.text.trim()) : selected),
-                  child: const Text('Lanjut')),
-            ],
-          ),
-        ),
-      );
-      manual.dispose();
+      final chosen = await showDialog<int>(context: context, builder: (context) => _VlanDialog(vlans: vlans));
       if (chosen == null) return;
       values['vlan'] = chosen;
     } else if (field != null) {
@@ -253,4 +225,57 @@ class _OntDetailPageState extends State<OntDetailPage> {
         label: Text(label),
         style: danger ? FilledButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error) : null,
       );
+}
+
+
+class _VlanDialog extends StatefulWidget {
+  const _VlanDialog({required this.vlans});
+  final List<int> vlans;
+
+  @override
+  State<_VlanDialog> createState() => _VlanDialogState();
+}
+
+class _VlanDialogState extends State<_VlanDialog> {
+  final _manual = TextEditingController();
+  int? _selected;
+
+  @override
+  void dispose() {
+    _manual.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasList = widget.vlans.isNotEmpty;
+    return AlertDialog(
+      title: const Text('Ubah VLAN'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: hasList
+            ? ListView(
+                shrinkWrap: true,
+                children: widget.vlans
+                    .map((v) => ListTile(
+                          dense: true,
+                          title: Text('$v'),
+                          selected: _selected == v,
+                          trailing: _selected == v ? const Icon(Icons.check) : null,
+                          onTap: () => setState(() => _selected = v),
+                        ))
+                    .toList())
+            : TextField(
+                controller: _manual,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'VLAN (daftar OLT tidak tersedia)')),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, hasList ? _selected : int.tryParse(_manual.text.trim())),
+            child: const Text('Lanjut')),
+      ],
+    );
+  }
 }
