@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-apk.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Siapkan project Android
+        working-directory: mobile
+        run: flutter create --platforms=android --org id.hyudien --project-name olt_control .
+      - name: Ambil dependensi Flutter
+        working-directory: mobile
+        run: flutter pub get
+      - name: Analisis kode
+        working-directory: mobile
+        run: flutter analyze
+      - name: Build APK debug
+        working-directory: mobile
+        run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: olt-control-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
