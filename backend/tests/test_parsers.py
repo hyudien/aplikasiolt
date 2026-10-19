@@ -256,3 +256,9 @@ def test_parse_vlan_list():
     out = "VLAN Name Status\n1 default active\n177 TEST_177 active\nVlan list: 200-202,300\nZXAN#"
     assert parse_vlan_list(out) == [1, 177, 200, 201, 202, 300]
     assert parse_vlan_list("no vlan") == []
+
+
+def test_parse_vlan_list_from_running_config():
+    from app.parsers import parse_vlan_list
+    out = "hostname ZXAN\nvlan 100,177\nvlan 200-201\ninterface vlan 100\nZXAN#"
+    assert parse_vlan_list(out) == [100, 177, 200, 201]
