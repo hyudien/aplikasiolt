@@ -178,6 +178,40 @@ class ZteC320Adapter(OltAdapter):
         await self.execute(commands.SAVE_CONFIG)
         return {"success": True, "message": f"PPPoE diubah ke {username}", "pppoe_user": username}
 
+    async def change_vlan(self, interface: str, vlan: int) -> dict:
+        """Ubah VLAN pada service-port (interface ONU) dan service (pon-onu-mng) yang sudah ada."""
+        commands.validate_interface(interface)
+        running = await self.execute(commands.show_onu_running(interface))
+        mng = await self.execute(commands.show_onu_mng(interface))
+        ports = [commands.set_service_port_vlan(int(m[0]), int(m[1]), vlan) for m in re.findall(
+            r"^[ \t]*service-port[ \t]+(\d+)[ \t]+vport[ \t]+(\d+)\b", running, re.MULTILINE)]
+        services = [commands.set_service_vlan(m[0], int(m[1]), vlan) for m in re.findall(
+            r"^[ \t]*service[ \t]+(\S+)[ \t]+gemport[ \t]+(\d+)[ \t]+vlan[ \t]+\d+", mng, re.MULTILINE)]
+        if not ports and not services:
+            raise RuntimeError("Service-port/service ONU tidak ditemukan di konfigurasi OLT")
+        sequence = ["configure terminal"]
+        if ports:
+            sequence += [commands.ONU_INTERFACE.format(interface=interface), *ports, "exit"]
+        if services:
+            sequence += [commands.REMOTE_MANAGEMENT.format(interface=interface), *services, "exit"]
+        failure = None
+        try:
+            for command in sequence:
+                output = await self.execute(command)
+                if parsers.CLI_ERROR.search(output.replace(command, "")):
+                    failure = output.strip().splitlines()[-2:-1] or [output.strip()]
+                    break
+        finally:
+            for command in ("exit",):
+                try:
+                    await self.execute(command)
+                except Exception:
+                    break
+        if failure is not None:
+            raise RuntimeError("OLT menolak perintah VLAN: " + failure[0][:120])
+        await self.execute(commands.SAVE_CONFIG)
+        return {"success": True, "message": f"VLAN diubah ke {vlan}", "vlan": vlan}
+
     async def traffic_profiles_list(self) -> list[str]:
         """Daftar traffic profile (untuk gemport upstream/downstream) yang ada di OLT."""
         for command in commands.SHOW_TRAFFIC_PROFILES:

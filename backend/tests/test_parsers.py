@@ -217,3 +217,35 @@ def test_zte_change_pppoe_sequence_and_redaction():
         asyncio.run(fake.change_pppoe("1/1/1:2", "new", "secretpw"))
     assert "secretpw" not in str(exc.value)
     assert "write" not in fake.sent
+
+
+def test_zte_change_vlan_sequence():
+    import asyncio
+    import pytest
+    from app.olt.zte import ZteC320Adapter
+
+    class Fake(ZteC320Adapter):
+        def __init__(self, reject=False):
+            super().__init__("h", 23, "u", "p")
+            self.sent, self.reject = [], reject
+
+        async def execute(self, command):
+            self.sent.append(command)
+            if command.startswith("show running"):
+                return RUNNING_SAMPLE
+            if command.startswith("show onu running"):
+                return MNG_SAMPLE
+            if self.reject and command.startswith("service-port"):
+                return "%Error: Invalid input\nZXAN#"
+            return "ok\nZXAN#"
+
+    fake = Fake()
+    result = asyncio.run(fake.change_vlan("1/1/1:1", 200))
+    assert result["vlan"] == 200
+    assert "service-port 1 vport 1 user-vlan 200 vlan 200" in fake.sent
+    assert "service ServiceName gemport 1 vlan 200" in fake.sent
+    assert fake.sent[-1] == "write"
+    fake = Fake(reject=True)
+    with pytest.raises(RuntimeError):
+        asyncio.run(fake.change_vlan("1/1/1:1", 200))
+    assert "write" not in fake.sent

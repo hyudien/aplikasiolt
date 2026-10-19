@@ -113,3 +113,15 @@ def test_change_pppoe_mock_validation_and_no_password_leak(tmp_path, monkeypatch
         assert "rahasia-baru" not in response.text
         assert client.get("/api/onts/1/1/1:2").json()["pppoe_user"] == "baru01"
         assert "rahasia-baru" not in client.get("/api/logs").text
+
+
+def test_change_vlan_mock(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "test.db"))
+    with TestClient(main.app) as client:
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).json()["access_token"]
+        client.headers["Authorization"] = "Bearer " + token
+        url = "/api/onts/1/1/1:2/actions/change-vlan"
+        assert client.post(url, json={}).status_code == 422
+        assert client.post(url, json={"vlan": 5000}).status_code == 422
+        assert client.post(url, json={"vlan": 200}).status_code == 200
+        assert client.get("/api/onts/1/1/1:2").json()["vlan"] == 200

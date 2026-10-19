@@ -94,5 +94,21 @@ def set_pppoe(index: int, username: str, password: str) -> str:
     return SET_PPPoE.format(index=int(index), username=username, password=password)
 
 
+def set_service_port_vlan(index: int, vport: int, vlan: int) -> str:
+    vlan = int(vlan)
+    if not 1 <= vlan <= 4094:
+        raise ValueError("VLAN harus 1-4094")
+    return SET_SERVICE_PORT.format(index=int(index), vport=int(vport), vlan=vlan)
+
+
+def set_service_vlan(name: str, gemport: int, vlan: int) -> str:
+    vlan = int(vlan)
+    if not 1 <= vlan <= 4094:
+        raise ValueError("VLAN harus 1-4094")
+    if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,64}", name or ""):
+        raise ValueError("Nama service tidak valid")
+    return f"service {name} gemport {int(gemport)} vlan {vlan}"
+
+
 # TODO: Format service-port, T-CONT/GEM, VLAN, PPPoE, remote management, and
 # reboot commands against the exact C320 V2.1.0 release before enabling writes.

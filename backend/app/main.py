@@ -536,6 +536,19 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
             db.execute("UPDATE onts SET profile=? WHERE interface=?", (payload.profile, interface))
         log_action(user, action, interface, "success", payload.profile)
         return result
+    if action == "change-vlan" and not DEMO_MODE:
+        try:
+            async with olt_lock:
+                result = await adapter.change_vlan(interface, payload.vlan)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            log_action(user, action, interface, "failed", str(exc)[:200])
+            raise HTTPException(502, "Gagal mengubah VLAN: " + (str(exc) or type(exc).__name__)[:150]) from exc
+        with connect_db() as db:
+            db.execute("UPDATE onts SET vlan=? WHERE interface=?", (payload.vlan, interface))
+        log_action(user, action, interface, "success", str(payload.vlan))
+        return result
     if action == "change-pppoe" and not DEMO_MODE:
         try:
             commands.set_pppoe(1, payload.username, payload.password)
