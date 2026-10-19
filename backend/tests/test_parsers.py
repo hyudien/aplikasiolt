@@ -278,3 +278,18 @@ CVLAN:         151
 CVLAN priority:0
 """
     assert parse_vlan_list(out) == [150, 151]
+
+
+def test_parse_vlan_profiles_keeps_exact_names():
+    from app.parsers import parse_vlan_profiles
+    out = """ZXAN#show gpon onu profile vlan
+Profile name:  vlan-KWL(150)
+Tag mode:      tag
+CVLAN:         150
+CVLAN priority:0
+
+Profile name:  TEST_177
+Tag mode:      tag
+CVLAN:         177
+"""
+    assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "TEST_177", "vlan": 177}]

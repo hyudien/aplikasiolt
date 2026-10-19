@@ -448,9 +448,11 @@ async def olt_profiles(_user: str = Depends(current_user)):
     try:
         async with olt_lock:
             vlans = await adapter.vlans_list()
+            vlan_profiles = await adapter.vlan_profiles_list()
     except Exception:
-        vlans = []
-    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": [], "vlans": vlans}
+        vlans, vlan_profiles = [], []
+    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": [], "vlans": vlans,
+            "vlan_profiles": vlan_profiles}
 
 
 @app.post("/api/onts/register")

@@ -249,3 +249,18 @@ def parse_vlan_list(output: str) -> list[int]:
         elif (m := re.match(r"(\d{1,4})[ \t]+\S", line)) and 1 <= int(m.group(1)) <= 4094:
             found.add(int(m.group(1)))
     return sorted(found)
+
+
+def parse_vlan_profiles(output: str) -> list[dict]:
+    """Blok `show gpon onu profile vlan`: nama profile persis seperti di OLT (mis. `vlan-KWL(150)`, `TEST_177`) + CVLAN."""
+    profiles: list[dict] = []
+    name = None
+    for raw in output.splitlines():
+        line = raw.strip()
+        if m := re.match(r"Profile[ \t]+name[ \t]*:[ \t]*(\S.*?)\s*$", line, re.IGNORECASE):
+            name = m.group(1)
+        elif name and (m := re.match(r"CVLAN[ \t]*:[ \t]*(\d{1,4})\s*$", line, re.IGNORECASE)):
+            if 1 <= int(m.group(1)) <= 4094 and all(p["name"] != name for p in profiles):
+                profiles.append({"name": name, "vlan": int(m.group(1))})
+            name = None
+    return profiles

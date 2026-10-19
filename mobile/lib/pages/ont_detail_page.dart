@@ -105,10 +105,17 @@ class _OntDetailPageState extends State<OntDetailPage> {
         values['downstream'] = chosen['downstream'];
       }
     } else if (action == 'change-vlan') {
-      List<int> vlans = [];
+      final Map<int, String> vlans = {};
       try {
         final data = await ApiClient.instance.get('/api/profiles') as Map<String, dynamic>;
-        vlans = (data['vlans'] as List<dynamic>? ?? []).map((e) => int.tryParse(e.toString()) ?? 0).where((v) => v > 0).toList();
+        for (final item in (data['vlan_profiles'] as List<dynamic>? ?? [])) {
+          final vlan = int.tryParse('${(item as Map)['vlan']}') ?? 0;
+          if (vlan > 0) vlans[vlan] = item['name'].toString();
+        }
+        for (final e in (data['vlans'] as List<dynamic>? ?? [])) {
+          final vlan = int.tryParse(e.toString()) ?? 0;
+          if (vlan > 0) vlans.putIfAbsent(vlan, () => '');
+        }
       } catch (_) {}
       if (!mounted) return;
       final chosen = await showDialog<int>(context: context, builder: (context) => _VlanDialog(vlans: vlans));
@@ -230,7 +237,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
 
 class _VlanDialog extends StatefulWidget {
   const _VlanDialog({required this.vlans});
-  final List<int> vlans;
+  final Map<int, String> vlans;
 
   @override
   State<_VlanDialog> createState() => _VlanDialogState();
@@ -256,13 +263,14 @@ class _VlanDialogState extends State<_VlanDialog> {
         child: hasList
             ? ListView(
                 shrinkWrap: true,
-                children: widget.vlans
-                    .map((v) => ListTile(
+                children: widget.vlans.entries
+                    .map((e) => ListTile(
                           dense: true,
-                          title: Text('$v'),
-                          selected: _selected == v,
-                          trailing: _selected == v ? const Icon(Icons.check) : null,
-                          onTap: () => setState(() => _selected = v),
+                          title: Text(e.value.isEmpty ? '${e.key}' : e.value),
+                          subtitle: e.value.isEmpty ? null : Text('VLAN ${e.key}'),
+                          selected: _selected == e.key,
+                          trailing: _selected == e.key ? const Icon(Icons.check) : null,
+                          onTap: () => setState(() => _selected = e.key),
                         ))
                     .toList())
             : TextField(
