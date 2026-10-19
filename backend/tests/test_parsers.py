@@ -262,3 +262,19 @@ def test_parse_vlan_list_from_running_config():
     from app.parsers import parse_vlan_list
     out = "hostname ZXAN\nvlan 100,177\nvlan 200-201\ninterface vlan 100\nZXAN#"
     assert parse_vlan_list(out) == [100, 177, 200, 201]
+
+
+def test_parse_vlan_list_from_onu_profile_vlan():
+    from app.parsers import parse_vlan_list
+    out = """ZXAN#show gpon onu profile vlan
+Profile name:  vlan-KWL(150)
+Tag mode:      tag
+CVLAN:         150
+CVLAN priority:0
+
+Profile name:  vlan-TJS(151)
+Tag mode:      tag
+CVLAN:         151
+CVLAN priority:0
+"""
+    assert parse_vlan_list(out) == [150, 151]

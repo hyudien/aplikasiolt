@@ -237,7 +237,10 @@ def parse_vlan_list(output: str) -> list[int]:
     found: set[int] = set()
     for raw in output.splitlines():
         line = raw.strip()
-        if re.fullmatch(r"(?:vlan[ \t]*(?:list)?[ \t]*:?[ \t]*)?\d+(?:-\d+)?(?:[ \t]*,[ \t]*\d+(?:-\d+)?)*", line, re.IGNORECASE) \
+        if m := re.fullmatch(r"CVLAN[ \t]*:[ \t]*(\d{1,4})", line, re.IGNORECASE):
+            if 1 <= int(m.group(1)) <= 4094:
+                found.add(int(m.group(1)))
+        elif re.fullmatch(r"(?:vlan[ \t]*(?:list)?[ \t]*:?[ \t]*)?\d+(?:-\d+)?(?:[ \t]*,[ \t]*\d+(?:-\d+)?)*", line, re.IGNORECASE) \
                 or re.match(r"vlan[ \t]*(?:list)?[ \t]*:", line, re.IGNORECASE):
             for a, b in re.findall(r"(\d+)(?:-(\d+))?", line.split(":", 1)[-1] if ":" in line else line):
                 lo, hi = int(a), int(b or a)
