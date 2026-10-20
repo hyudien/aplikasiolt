@@ -184,8 +184,10 @@ class RegisterRequest(BaseModel):
     pppoe_user: str = Field(default="", max_length=64)
     pppoe_password: str = Field(default="", max_length=128)
     mode: Literal["pppoe", "bridge", "hybrid"]
+    vlan_profile: str = Field(default="", max_length=64)
+    onu_type: str = Field(default="", max_length=32)
 
-    @field_validator("name", "profile", "pppoe_user", "pppoe_password")
+    @field_validator("name", "profile", "pppoe_user", "pppoe_password", "vlan_profile", "onu_type")
     @classmethod
     def safe_value(cls, value):
         if any(char in value for char in "\r\n;"):
@@ -493,10 +495,29 @@ async def register_ont(payload: RegisterRequest, user: str = Depends(current_use
             adapter.onts.append(created)
             adapter.unconfigured_onts = [item for item in adapter.unconfigured_onts if item["serial"].upper() != serial]
         else:
-            # TODO: daftarkan dengan perintah ZTE tervalidasi sebelum mengaktifkan mode produksi.
-            raise HTTPException(501, "Registrasi CLI belum diaktifkan: validasi sintaks firmware terlebih dahulu")
+            try:
+                commands.provision_onu("1/1/1:1", payload.name, payload.profile, payload.vlan, payload.mode,
+                                       payload.pppoe_user, payload.pppoe_password, payload.vlan_profile)
+                created_info = await adapter.register_ont(
+                    payload.pon, serial, payload.name, payload.vlan, payload.profile, payload.mode,
+                    payload.pppoe_user, payload.pppoe_password, payload.vlan_profile,
+                    payload.onu_type or os.getenv("DEFAULT_ONU_TYPE", "ZTE-F660"))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except Exception as exc:
+                log_action(user, "register", payload.pon, "failed", "registrasi gagal")
+                raise HTTPException(502, "Gagal registrasi ONT: " + (str(exc) or type(exc).__name__)[:150]) from exc
+            interface = created_info["interface"]
+            created.update(interface=interface, onu_id=created_info["onu_id"])
+            with connect_db() as db:
+                db.execute(
+                    """INSERT INTO onts(interface,pon,onu_id,serial,name,pppoe_user,status,reason,vlan,profile,mode,optical_power,last_seen)
+                    VALUES(:interface,:pon,:onu_id,:serial,:name,:pppoe_user,:status,:reason,:vlan,:profile,:mode,NULL,:last_seen)
+                    ON CONFLICT(interface) DO UPDATE SET serial=:serial,name=:name,pppoe_user=:pppoe_user,status=:status,
+                    reason=:reason,vlan=:vlan,profile=:profile,mode=:mode""",
+                    {**created, "last_seen": datetime.now(timezone.utc).isoformat()})
     log_action(user, "register", interface, "success", serial)
-    return {"success": True, "ont": created, "save_config_required": True}
+    return {"success": True, "ont": created, "save_config_required": DEMO_MODE}
 
 
 @app.post("/api/onts/{interface:path}/actions/{action}")

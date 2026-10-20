@@ -302,3 +302,64 @@ def test_vlan_parsers_tolerate_pagination_control_chars():
            "\x1b[1DCVLAN:         151\r\nCVLAN priority:0\r\n")
     assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "vlan-TJS(151)", "vlan": 151}]
     assert parse_vlan_list(out) == [150, 151]
+
+
+class _FakeRegisterAdapter:
+    def make(self, reject_on=None):
+        from app.olt.zte import ZteC320Adapter
+
+        class Fake(ZteC320Adapter):
+            def __init__(self):
+                super().__init__("h", 23, "u", "p")
+                self.sent = []
+
+            async def execute(self, command):
+                self.sent.append(command)
+                if command.startswith("show pon onu information"):
+                    return ("OnuIndex Name Type Mode Auth State\n"
+                            "1/1/1:1 ZTEGC0000001 1 1 enable success working 0\nZXAN#")
+                if reject_on and command.startswith(reject_on):
+                    return command + "\n%Error 20201: Invalid input secretpw\nZXAN#"
+                return "ok\nZXAN#"
+
+        return Fake()
+
+
+def test_zte_register_ont_sequence():
+    import asyncio
+    fake = _FakeRegisterAdapter().make()
+    result = asyncio.run(fake.register_ont("1/1/1", "ZTEGD1DF751A", "REPZA", 177, "20Mbps", "pppoe",
+                                           "u@nombes.net", "secretpw", "TEST_177"))
+    assert result == {"onu_id": 2, "interface": "1/1/1:2"}
+    sent = fake.sent
+    assert "onu 2 type ZTE-F660 sn ZTEGD1DF751A" in sent
+    assert "interface gpon-onu_1/1/1:2" in sent
+    assert "tcont 1 name PPP profile 20Mbps" in sent
+    assert "service-port 1 vport 1 user-vlan 177 vlan 177" in sent
+    assert "wan-ip 1 mode pppoe username u@nombes.net password secretpw vlan-profile TEST_177 host 1" in sent
+    assert sent[-1] == "write"
+
+
+def test_zte_register_ont_rollback_and_redaction():
+    import asyncio
+    import pytest
+    fake = _FakeRegisterAdapter().make(reject_on="wan-ip")
+    with pytest.raises(RuntimeError) as exc:
+        asyncio.run(fake.register_ont("1/1/1", "ZTEGD1DF751A", "REPZA", 177, "20Mbps", "pppoe",
+                                      "u", "secretpw"))
+    assert "secretpw" not in str(exc.value)
+    assert "no onu 2" in fake.sent
+    assert "write" not in fake.sent
+
+
+def test_provision_onu_validation_and_bridge():
+    import pytest
+    from app import commands
+    seq = commands.provision_onu("1/1/1:2", "Nama", "20M", 177, "bridge")
+    assert not any(c.startswith("wan-ip") for c in seq)
+    for kwargs in ({"vlan": 0}, {"profile": "bad profile"}, {"name": "a;b"}):
+        args = {"name": "N", "profile": "20M", "vlan": 100, **kwargs}
+        with pytest.raises(ValueError):
+            commands.provision_onu("1/1/1:2", args["name"], args["profile"], args["vlan"], "bridge")
+    with pytest.raises(ValueError):
+        commands.provision_onu("1/1/1:2", "N", "20M", 100, "pppoe", "u", "p", "bad;profile")

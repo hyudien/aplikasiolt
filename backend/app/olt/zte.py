@@ -212,6 +212,56 @@ class ZteC320Adapter(OltAdapter):
         await self.execute(commands.SAVE_CONFIG)
         return {"success": True, "message": f"VLAN diubah ke {vlan}", "vlan": vlan}
 
+    async def register_ont(self, pon: str, serial: str, name: str, vlan: int, profile: str, mode: str,
+                           pppoe_user: str = "", pppoe_password: str = "", vlan_profile: str = "",
+                           onu_type: str = "ZTE-F660") -> dict:
+        """Daftarkan ONU baru: ONU ID kosong dibaca langsung dari OLT, rollback (`no onu`) bila konfigurasi gagal."""
+        output = await self.execute(commands.SHOW_ONU_INFORMATION.format(pon=pon))
+        used = {item["onu_id"] for item in parsers.parse_onu_information(output)}
+        onu_id = next((n for n in range(1, 129) if n not in used), None)
+        if onu_id is None:
+            raise RuntimeError("PON penuh")
+        interface = f"{pon}:{onu_id}"
+        register = commands.register_onu(pon, onu_id, onu_type, serial)
+        provision = commands.provision_onu(interface, name, profile, vlan, mode, pppoe_user,
+                                           pppoe_password, vlan_profile)
+        secrets = [pppoe_password] if pppoe_password else []
+
+        def redact(text: str) -> str:
+            for secret in secrets:
+                text = text.replace(secret, "***")
+            return text
+
+        async def run(sequence: list[str]) -> str | None:
+            for command in sequence:
+                result = await self.execute(command)
+                if parsers.CLI_ERROR.search(result.replace(command, "")):
+                    lines = redact(result).strip().splitlines()
+                    return (lines[-2:-1] or lines or [""])[0][:120]
+            return None
+
+        failure = None
+        try:
+            failure = await run(register)
+            if failure is None:
+                failure = await run(provision)
+        finally:
+            for command in ("exit", "exit"):
+                try:
+                    await self.execute(command)
+                except Exception:
+                    break
+        if failure is not None:
+            try:
+                await run(commands.delete_onu(pon, onu_id))
+                for command in ("exit", "exit"):
+                    await self.execute(command)
+            except Exception:
+                pass
+            raise RuntimeError("OLT menolak perintah registrasi: " + failure)
+        await self.execute(commands.SAVE_CONFIG)
+        return {"onu_id": onu_id, "interface": interface}
+
     async def vlan_profiles_list(self) -> list[dict]:
         """Profile VLAN (nama persis + CVLAN) dari OLT; kosong bila tidak terbaca."""
         try:

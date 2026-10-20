@@ -111,5 +111,62 @@ def set_service_vlan(name: str, gemport: int, vlan: int) -> str:
     return f"service {name} gemport {int(gemport)} vlan {vlan}"
 
 
+_ONU_TYPE_RE = re.compile(r"[A-Za-z0-9_.\-]{1,32}")
+_VLAN_PROFILE_RE = re.compile(r"[A-Za-z0-9_.()\-]{1,64}")
+_SERIAL_RE = re.compile(r"[A-Za-z0-9]{8,16}")
+_PON_RE = re.compile(r"\d{1,3}/\d{1,3}/\d{1,3}")
+
+
+def validate_vlan_profile(name: str) -> str:
+    """Nama profile VLAN dipakai persis seperti di OLT (mis. `vlan-KWL(150)`, `TEST_177`)."""
+    if not isinstance(name, str) or not _VLAN_PROFILE_RE.fullmatch(name):
+        raise ValueError("Nama profile VLAN tidak valid")
+    return name
+
+
+def register_onu(pon: str, onu_id: int, onu_type: str, serial: str) -> list[str]:
+    """Urutan CLI mendaftarkan ONU baru di port PON (mode interface gpon-olt)."""
+    if not _PON_RE.fullmatch(pon or ""):
+        raise ValueError("PON tidak valid")
+    if not _ONU_TYPE_RE.fullmatch(onu_type or ""):
+        raise ValueError("Tipe ONU tidak valid")
+    if not _SERIAL_RE.fullmatch(serial or ""):
+        raise ValueError("SN tidak valid")
+    return ["configure terminal", PON_INTERFACE.format(pon=pon),
+            REGISTER_ONU.format(onu_id=int(onu_id), onu_type=onu_type, serial=serial), "exit"]
+
+
+def delete_onu(pon: str, onu_id: int) -> list[str]:
+    if not _PON_RE.fullmatch(pon or ""):
+        raise ValueError("PON tidak valid")
+    return ["configure terminal", PON_INTERFACE.format(pon=pon), DELETE_ONU.format(onu_id=int(onu_id)), "exit", "exit"]
+
+
+def provision_onu(interface: str, name: str, profile: str, vlan: int, mode: str, pppoe_user: str = "",
+                  pppoe_password: str = "", vlan_profile: str = "") -> list[str]:
+    """Konfigurasi layanan internet ONU: nama, T-CONT/GEM, service-port, dan (untuk PPPoE) wan-ip."""
+    validate_interface(interface)
+    vlan = int(vlan)
+    if not 1 <= vlan <= 4094:
+        raise ValueError("VLAN harus 1-4094")
+    if not isinstance(name, str) or not name.strip() or any(c in name for c in "\r\n;"):
+        raise ValueError("Nama ONT tidak valid")
+    sequence = [
+        "configure terminal", ONU_INTERFACE.format(interface=interface),
+        SET_NAME.format(name=name.strip()),
+        "tcont 1 name PPP profile " + validate_profile(profile),
+        "gemport 1 name PPP tcont 1",
+        SET_SERVICE_PORT.format(index=1, vport=1, vlan=vlan), "exit",
+        REMOTE_MANAGEMENT.format(interface=interface), set_service_vlan("ServiceName", 1, vlan),
+    ]
+    if mode in {"pppoe", "hybrid"}:
+        command = set_pppoe(1, pppoe_user, pppoe_password)
+        if vlan_profile:
+            command += " vlan-profile " + validate_vlan_profile(vlan_profile) + " host 1"
+        sequence.append(command)
+    sequence.append("exit")
+    return sequence
+
+
 # TODO: Format service-port, T-CONT/GEM, VLAN, PPPoE, remote management, and
 # reboot commands against the exact C320 V2.1.0 release before enabling writes.
