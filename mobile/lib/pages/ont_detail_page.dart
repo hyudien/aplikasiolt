@@ -106,8 +106,9 @@ class _OntDetailPageState extends State<OntDetailPage> {
       }
     } else if (action == 'change-vlan') {
       final Map<int, String> vlans = {};
+      String? vlanError;
       try {
-        final data = await ApiClient.instance.get('/api/profiles') as Map<String, dynamic>;
+        final data = await ApiClient.instance.get('/api/vlans') as Map<String, dynamic>;
         for (final item in (data['vlan_profiles'] as List<dynamic>? ?? [])) {
           final vlan = int.tryParse('${(item as Map)['vlan']}') ?? 0;
           if (vlan > 0) vlans[vlan] = item['name'].toString();
@@ -116,8 +117,13 @@ class _OntDetailPageState extends State<OntDetailPage> {
           final vlan = int.tryParse(e.toString()) ?? 0;
           if (vlan > 0) vlans.putIfAbsent(vlan, () => '');
         }
-      } catch (_) {}
+      } catch (error) {
+        vlanError = error.toString();
+      }
       if (!mounted) return;
+      if (vlanError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Daftar VLAN gagal dimuat: $vlanError')));
+      }
       final chosen = await showDialog<int>(context: context, builder: (context) => _VlanDialog(vlans: vlans));
       if (chosen == null) return;
       values['vlan'] = chosen;

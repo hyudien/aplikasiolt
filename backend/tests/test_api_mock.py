@@ -126,3 +126,14 @@ def test_change_vlan_mock(tmp_path, monkeypatch):
         assert client.post(url, json={"vlan": 200}).status_code == 200
         assert client.get("/api/onts/1/1/1:2").json()["vlan"] == 200
         assert 200 in client.get("/api/profiles").json()["vlans"]
+
+
+def test_vlans_endpoint_mock(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", str(tmp_path / "test.db"))
+    with TestClient(main.app) as client:
+        assert client.get("/api/vlans").status_code == 401
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).json()["access_token"]
+        client.headers["Authorization"] = "Bearer " + token
+        data = client.get("/api/vlans").json()
+        assert {"name": "TEST_177", "vlan": 177} in data["vlan_profiles"]
+        assert 177 in data["vlans"]

@@ -455,6 +455,18 @@ async def olt_profiles(_user: str = Depends(current_user)):
             "vlan_profiles": vlan_profiles}
 
 
+@app.get("/api/vlans")
+async def olt_vlans(_user: str = Depends(current_user)):
+    """Profile VLAN dari satu perintah OLT (cepat); daftar angka dilengkapi dari profile, fallback hanya bila kosong."""
+    try:
+        async with olt_lock:
+            vlan_profiles = await adapter.vlan_profiles_list()
+            vlans = sorted({item["vlan"] for item in vlan_profiles}) or await adapter.vlans_list()
+    except Exception as exc:
+        raise HTTPException(502, "Gagal membaca VLAN dari OLT: " + (str(exc) or type(exc).__name__)[:150]) from exc
+    return {"vlans": vlans, "vlan_profiles": vlan_profiles}
+
+
 @app.post("/api/onts/register")
 async def register_ont(payload: RegisterRequest, user: str = Depends(current_user)):
     serial = payload.serial.upper()
