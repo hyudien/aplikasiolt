@@ -293,3 +293,12 @@ Tag mode:      tag
 CVLAN:         177
 """
     assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "TEST_177", "vlan": 177}]
+
+
+def test_vlan_parsers_tolerate_pagination_control_chars():
+    from app.parsers import parse_vlan_list, parse_vlan_profiles
+    out = ("Profile name:  vlan-KWL(150)\r\nCVLAN:         150\r\n\r\n"
+           "\x08\x08\x08\x08        \x08\x08\x08\x08Profile name:  vlan-TJS(151)\r\n"
+           "\x1b[1DCVLAN:         151\r\nCVLAN priority:0\r\n")
+    assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "vlan-TJS(151)", "vlan": 151}]
+    assert parse_vlan_list(out) == [150, 151]

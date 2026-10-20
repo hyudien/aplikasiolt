@@ -235,7 +235,7 @@ def parse_onu_mng_config(output: str) -> dict:
 def parse_vlan_list(output: str) -> list[int]:
     """VLAN terdaftar dari `show vlan brief`: baris `100 name ...` atau daftar `1,100-105`."""
     found: set[int] = set()
-    for raw in output.splitlines():
+    for raw in clean_cli(output).splitlines():
         line = raw.strip()
         if m := re.fullmatch(r"CVLAN[ \t]*:[ \t]*(\d{1,4})", line, re.IGNORECASE):
             if 1 <= int(m.group(1)) <= 4094:
@@ -255,7 +255,7 @@ def parse_vlan_profiles(output: str) -> list[dict]:
     """Blok `show gpon onu profile vlan`: nama profile persis seperti di OLT (mis. `vlan-KWL(150)`, `TEST_177`) + CVLAN."""
     profiles: list[dict] = []
     name = None
-    for raw in output.splitlines():
+    for raw in clean_cli(output).splitlines():
         line = raw.strip()
         if m := re.match(r"Profile[ \t]+name[ \t]*:[ \t]*(\S.*?)\s*$", line, re.IGNORECASE):
             name = m.group(1)
@@ -264,3 +264,11 @@ def parse_vlan_profiles(output: str) -> list[dict]:
                 profiles.append({"name": name, "vlan": int(m.group(1))})
             name = None
     return profiles
+
+
+_CONTROL_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def clean_cli(output: str) -> str:
+    """Buang escape ANSI, backspace, dan karakter kontrol sisa paginasi `--More--`."""
+    return _CONTROL_RE.sub("", output.replace("\r\n", "\n").replace("\r", "\n"))
