@@ -9,6 +9,7 @@ SHOW_TRAFFIC_PROFILES = ("show gpon profile traffic", "show pon profile traffic"
 SET_GEMPORT_LIMIT = "gemport {index} traffic-limit upstream {upstream} downstream {downstream}"
 SHOW_VLANS = ("show gpon onu profile vlan", "show vlan brief", "show vlan", "show vlan all", "show vlan summary", "show running-config")
 SHOW_UNCONFIGURED = "show gpon onu uncfg"
+SHOW_UNCONFIGURED_ALT = ("show pon onu uncfg",)
 SHOW_ATTENUATION = "show pon power attenuation gpon-onu_{interface}"
 SHOW_DETAIL = "show gpon onu detail-info {interface}"
 PON_INTERFACE = "interface gpon-olt_{pon}"

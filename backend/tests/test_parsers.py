@@ -363,3 +363,17 @@ def test_provision_onu_validation_and_bridge():
             commands.provision_onu("1/1/1:2", args["name"], args["profile"], args["vlan"], "bridge")
     with pytest.raises(ValueError):
         commands.provision_onu("1/1/1:2", "N", "20M", 100, "pppoe", "u", "p", "bad;profile")
+
+
+def test_parse_unconfigured_zte_c320_formats():
+    out = """ZXAN#show gpon onu uncfg
+OnuIndex                 Sn                  State
+---------------------------------------------------------------------
+gpon-onu_1/1/1:1         ZTEGD1DF751A        unknown
+gpon-onu_1/1/2:3         ZTEGC0000009        unknown
+ZXAN#"""
+    assert parse_unconfigured(out) == [{"pon": "1/1/1", "serial": "ZTEGD1DF751A"},
+                                       {"pon": "1/1/2", "serial": "ZTEGC0000009"}]
+    assert parse_unconfigured("No related information to show.\nZXAN#") == []
+    assert parse_unconfigured("OltIndex Model SN\ngpon-olt_1/1/1 ZTE-F660 ZTEGC0000001") == [
+        {"pon": "1/1/1", "serial": "ZTEGC0000001"}]

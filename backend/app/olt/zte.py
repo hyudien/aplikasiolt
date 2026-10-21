@@ -292,7 +292,14 @@ class ZteC320Adapter(OltAdapter):
         return []
 
     async def unconfigured(self) -> list[dict]:
-        return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
+        found = parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
+        if found:
+            return found
+        try:
+            found = parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED_ALT[0]))
+        except Exception:
+            found = []
+        return found
 
     async def profiles_list(self) -> list[str]:
         """Daftar T-CONT profile yang ada di OLT (tidak gagal bila perintah tidak didukung)."""

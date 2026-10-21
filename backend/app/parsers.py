@@ -19,7 +19,8 @@ _INFO_STATE = re.compile(
 _SERIAL = re.compile(r"^(?:SN:)?(?P<serial>[A-Za-z0-9]{8,16})(?:\(.*\))?$")
 _FULL_SN = re.compile(r"\bSN\(([A-Za-z0-9]{8,16})\)")
 _UNCFIG_ROW = re.compile(
-    r"^\s*(?P<interface>\d+/\d+/\d+)\s+(?P<serial>[A-Za-z0-9]{8,16})\s*$",
+    r"^\s*(?:gpon[-_](?:onu|olt)_)?(?P<interface>\d+/\d+/\d+)(?::\d+)?\s+"
+    r"(?:\S+\s+)??(?:SN:?\s*)?(?P<serial>[A-Za-z0-9]{8,16})(?:\s+\S+)*\s*$",
     re.IGNORECASE,
 )
 _ONU_ID = re.compile(r"(?P<pon>\d+/\d+/\d+):(?P<onu_id>\d+)")
@@ -91,7 +92,7 @@ def parse_onu_information(output: str) -> list[dict]:
 
 def parse_unconfigured(output: str) -> list[dict]:
     result = []
-    for line in output.splitlines():
+    for line in clean_cli(output).splitlines():
         match = _UNCFIG_ROW.match(line)
         if match:
             result.append({"pon": match.group("interface"), "serial": match.group("serial").upper()})
