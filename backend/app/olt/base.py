@@ -25,3 +25,9 @@ class OltAdapter(ABC):
 
     async def traffic_profiles_list(self) -> list[str]:
         return []
+
+    async def vlans_list(self) -> list[int]:
+        return []
+
+    async def vlan_profiles_list(self) -> list[dict]:
+        return []

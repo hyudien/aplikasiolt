@@ -11,6 +11,9 @@ class RegistrationPage extends StatefulWidget {
 class _RegistrationPageState extends State<RegistrationPage> {
   List<dynamic> _candidates = [];
   List<String> _profiles = [];
+  List<Map<String, dynamic>> _vlanProfiles = [];
+  String _vlanProfile = '';
+  String? _vlanError;
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _selected;
@@ -43,6 +46,12 @@ class _RegistrationPageState extends State<RegistrationPage> {
         _profiles = ((results[1] as Map<String, dynamic>)['bandwidth'] as List<dynamic>).map((e) => e.toString()).toList();
         _profile = _profiles.isEmpty ? '' : _profiles.first;
       });
+      try {
+        final vlanData = await ApiClient.instance.vlanData();
+        setState(() => _vlanProfiles = (vlanData['vlan_profiles'] as List<dynamic>? ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList());
+      } catch (error) {
+        setState(() => _vlanError = error.toString());
+      }
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {
@@ -70,7 +79,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
     );
     if (accepted != true) return;
     try {
-      await ApiClient.instance.post('/api/onts/register', {
+      final registered = await ApiClient.instance.post('/api/onts/register', {
         'pon': candidate['pon'],
         'serial': candidate['serial'],
         'name': _name.text.trim(),
@@ -79,10 +88,12 @@ class _RegistrationPageState extends State<RegistrationPage> {
         'pppoe_user': _mode == 'bridge' ? '' : _pppoeUser.text.trim(),
         'pppoe_password': _mode == 'bridge' ? '' : _pppoePassword.text,
         'mode': _mode,
+        if (_vlanProfile.isNotEmpty) 'vlan_profile': _vlanProfile,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registrasi berhasil. Simpan konfigurasi sebelum selesai.')));
-      final save = await showDialog<bool>(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registrasi berhasil.')));
+      final needSave = (registered as Map<String, dynamic>)['save_config_required'] != false;
+      final save = !needSave ? false : await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Simpan konfigurasi OLT?'),
@@ -145,7 +156,28 @@ class _RegistrationPageState extends State<RegistrationPage> {
       const SizedBox(height: 12),
       TextField(controller: _name, decoration: const InputDecoration(labelText: 'Nama pelanggan')),
       const SizedBox(height: 12),
-      TextField(controller: _vlan, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'VLAN')),
+      if (_vlanProfiles.isNotEmpty)
+        DropdownButtonFormField<String>(
+          initialValue: _vlanProfile.isEmpty ? null : _vlanProfile,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Profile VLAN dari OLT'),
+          items: _vlanProfiles.map((v) => DropdownMenuItem(value: v['name'].toString(), child: Text('${v['name']}'))).toList(),
+          onChanged: (value) => setState(() {
+            _vlanProfile = value ?? '';
+            final match = _vlanProfiles.where((v) => v['name'].toString() == _vlanProfile);
+            if (match.isNotEmpty) _vlan.text = '${match.first['vlan']}';
+          }),
+        )
+      else
+        TextField(
+          controller: _vlan,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'VLAN',
+            helperText: _vlanError == null ? 'Daftar VLAN OLT kosong, isi manual.' : 'Daftar VLAN gagal dimuat: $_vlanError',
+            helperMaxLines: 3,
+          ),
+        ),
       const SizedBox(height: 12),
       DropdownButtonFormField<String>(
         initialValue: _profiles.contains(_profile) ? _profile : null,

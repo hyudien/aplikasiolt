@@ -184,8 +184,10 @@ class RegisterRequest(BaseModel):
     pppoe_user: str = Field(default="", max_length=64)
     pppoe_password: str = Field(default="", max_length=128)
     mode: Literal["pppoe", "bridge", "hybrid"]
+    vlan_profile: str = Field(default="", max_length=64)
+    onu_type: str = Field(default="", max_length=32)
 
-    @field_validator("name", "profile", "pppoe_user", "pppoe_password")
+    @field_validator("name", "profile", "pppoe_user", "pppoe_password", "vlan_profile", "onu_type")
     @classmethod
     def safe_value(cls, value):
         if any(char in value for char in "\r\n;"):
@@ -445,7 +447,26 @@ async def olt_profiles(_user: str = Depends(current_user)):
             traffic = await adapter.traffic_profiles_list()
     except Exception:
         traffic = []
-    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": []}
+    try:
+        async with olt_lock:
+            vlans = await adapter.vlans_list()
+            vlan_profiles = await adapter.vlan_profiles_list()
+    except Exception:
+        vlans, vlan_profiles = [], []
+    return {"bandwidth": bandwidth, "traffic": traffic, "line": [], "service": [], "vlans": vlans,
+            "vlan_profiles": vlan_profiles}
+
+
+@app.get("/api/vlans")
+async def olt_vlans(_user: str = Depends(current_user)):
+    """Profile VLAN dari satu perintah OLT (cepat); daftar angka dilengkapi dari profile, fallback hanya bila kosong."""
+    try:
+        async with olt_lock:
+            vlan_profiles = await adapter.vlan_profiles_list()
+            vlans = sorted({item["vlan"] for item in vlan_profiles}) or await adapter.vlans_list()
+    except Exception as exc:
+        raise HTTPException(502, "Gagal membaca VLAN dari OLT: " + (str(exc) or type(exc).__name__)[:150]) from exc
+    return {"vlans": vlans, "vlan_profiles": vlan_profiles}
 
 
 @app.post("/api/onts/register")
@@ -474,10 +495,29 @@ async def register_ont(payload: RegisterRequest, user: str = Depends(current_use
             adapter.onts.append(created)
             adapter.unconfigured_onts = [item for item in adapter.unconfigured_onts if item["serial"].upper() != serial]
         else:
-            # TODO: daftarkan dengan perintah ZTE tervalidasi sebelum mengaktifkan mode produksi.
-            raise HTTPException(501, "Registrasi CLI belum diaktifkan: validasi sintaks firmware terlebih dahulu")
+            try:
+                commands.provision_onu("1/1/1:1", payload.name, payload.profile, payload.vlan, payload.mode,
+                                       payload.pppoe_user, payload.pppoe_password, payload.vlan_profile)
+                created_info = await adapter.register_ont(
+                    payload.pon, serial, payload.name, payload.vlan, payload.profile, payload.mode,
+                    payload.pppoe_user, payload.pppoe_password, payload.vlan_profile,
+                    payload.onu_type or os.getenv("DEFAULT_ONU_TYPE", "ZTE-F660"))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except Exception as exc:
+                log_action(user, "register", payload.pon, "failed", "registrasi gagal")
+                raise HTTPException(502, "Gagal registrasi ONT: " + (str(exc) or type(exc).__name__)[:150]) from exc
+            interface = created_info["interface"]
+            created.update(interface=interface, onu_id=created_info["onu_id"])
+            with connect_db() as db:
+                db.execute(
+                    """INSERT INTO onts(interface,pon,onu_id,serial,name,pppoe_user,status,reason,vlan,profile,mode,optical_power,last_seen)
+                    VALUES(:interface,:pon,:onu_id,:serial,:name,:pppoe_user,:status,:reason,:vlan,:profile,:mode,NULL,:last_seen)
+                    ON CONFLICT(interface) DO UPDATE SET serial=:serial,name=:name,pppoe_user=:pppoe_user,status=:status,
+                    reason=:reason,vlan=:vlan,profile=:profile,mode=:mode""",
+                    {**created, "last_seen": datetime.now(timezone.utc).isoformat()})
     log_action(user, "register", interface, "success", serial)
-    return {"success": True, "ont": created, "save_config_required": True}
+    return {"success": True, "ont": created, "save_config_required": DEMO_MODE}
 
 
 @app.post("/api/onts/{interface:path}/actions/{action}")
@@ -535,6 +575,36 @@ async def ont_action(interface: str, action: str, payload: ActionRequest, user: 
         with connect_db() as db:
             db.execute("UPDATE onts SET profile=? WHERE interface=?", (payload.profile, interface))
         log_action(user, action, interface, "success", payload.profile)
+        return result
+    if action == "change-vlan" and not DEMO_MODE:
+        try:
+            async with olt_lock:
+                known_vlans = await adapter.vlans_list()
+                if known_vlans and payload.vlan not in known_vlans:
+                    raise ValueError(f"VLAN {payload.vlan} tidak terdaftar di OLT")
+                result = await adapter.change_vlan(interface, payload.vlan)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            log_action(user, action, interface, "failed", str(exc)[:200])
+            raise HTTPException(502, "Gagal mengubah VLAN: " + (str(exc) or type(exc).__name__)[:150]) from exc
+        with connect_db() as db:
+            db.execute("UPDATE onts SET vlan=? WHERE interface=?", (payload.vlan, interface))
+        log_action(user, action, interface, "success", str(payload.vlan))
+        return result
+    if action == "change-pppoe" and not DEMO_MODE:
+        try:
+            commands.set_pppoe(1, payload.username, payload.password)
+            async with olt_lock:
+                result = await adapter.change_pppoe(interface, payload.username, payload.password)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            log_action(user, action, interface, "failed", "perintah PPPoE gagal")
+            raise HTTPException(502, "Gagal mengubah PPPoE: " + (str(exc) or type(exc).__name__)[:150]) from exc
+        with connect_db() as db:
+            db.execute("UPDATE onts SET pppoe_user=? WHERE interface=?", (payload.username, interface))
+        log_action(user, action, interface, "success", payload.username)
         return result
     async with olt_lock:
         if not DEMO_MODE:

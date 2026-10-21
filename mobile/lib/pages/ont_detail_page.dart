@@ -10,6 +10,23 @@ class OntDetailPage extends StatefulWidget {
 }
 
 class _OntDetailPageState extends State<OntDetailPage> {
+  Map<int, String> _vlanNames = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ApiClient.instance.vlanNames().then((names) {
+      if (mounted) setState(() => _vlanNames = names);
+    });
+  }
+
+  String _vlanLabel(dynamic vlan) {
+    final number = int.tryParse('$vlan');
+    if (number == null) return '-';
+    final name = _vlanNames[number];
+    return name == null ? '$number' : name;
+  }
+
   bool _busy = false;
 
   Future<void> _action(String action, {bool confirm = false, String? field, String? label}) async {
@@ -104,6 +121,29 @@ class _OntDetailPageState extends State<OntDetailPage> {
         values['upstream'] = chosen['upstream'];
         values['downstream'] = chosen['downstream'];
       }
+    } else if (action == 'change-vlan') {
+      final Map<int, String> vlans = {};
+      String? vlanError;
+      try {
+        final data = await ApiClient.instance.vlanData();
+        for (final item in (data['vlan_profiles'] as List<dynamic>? ?? [])) {
+          final vlan = int.tryParse('${(item as Map)['vlan']}') ?? 0;
+          if (vlan > 0) vlans[vlan] = item['name'].toString();
+        }
+        for (final e in (data['vlans'] as List<dynamic>? ?? [])) {
+          final vlan = int.tryParse(e.toString()) ?? 0;
+          if (vlan > 0) vlans.putIfAbsent(vlan, () => '');
+        }
+      } catch (error) {
+        vlanError = error.toString();
+      }
+      if (!mounted) return;
+      if (vlanError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Daftar VLAN gagal dimuat: $vlanError')));
+      }
+      final chosen = await showDialog<int>(context: context, builder: (context) => _VlanDialog(vlans: vlans));
+      if (chosen == null) return;
+      values['vlan'] = chosen;
     } else if (field != null) {
       final controller = TextEditingController();
       final value = await showDialog<String>(
@@ -181,7 +221,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
                 const SizedBox(height: 12),
                 _info('SN', ont['serial']), _info('PON / ONU ID', '${ont['pon']} / ${ont['onu_id']}'),
                 _info('Status', '${ont['status']} (${ont['reason'] ?? '-'})'),
-                _info('PPPoE', ont['pppoe_user'] ?? '-'), _info('VLAN / Paket', '${ont['vlan'] ?? '-'} / ${ont['profile'] ?? '-'}'),
+                _info('PPPoE', ont['pppoe_user'] ?? '-'), _info('VLAN / Paket', '${_vlanLabel(ont['vlan'])} / ${ont['profile'] ?? '-'}'),
                 _info('Mode', ont['mode'] ?? '-'), _info('Daya optik', ont['optical_power'] ?? 'Belum tersedia'),
               ]))),
               if (_busy) const LinearProgressIndicator(),
@@ -191,7 +231,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
               Wrap(spacing: 8, runSpacing: 8, children: [
                 _button('Cek redaman', Icons.bolt, () => _action('attenuation')),
                 _button('Ubah paket', Icons.speed, () => _action('change-package', field: 'profile', label: 'Profile bandwidth')),
-                _button('Ubah VLAN', Icons.lan, () => _action('change-vlan', field: 'vlan', label: 'VLAN')),
+                _button('Ubah VLAN', Icons.lan, () => _action('change-vlan')),
                 _button('Ubah PPPoE', Icons.person, () => _action('change-pppoe')),
                 _button('Ganti ONT', Icons.swap_horiz, () => _action('replace', confirm: true, field: 'serial', label: 'SN ONT baru')),
                 _button('Enable remote', Icons.settings_remote, () => _action('remote-on')),
@@ -215,4 +255,58 @@ class _OntDetailPageState extends State<OntDetailPage> {
         label: Text(label),
         style: danger ? FilledButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error) : null,
       );
+}
+
+
+class _VlanDialog extends StatefulWidget {
+  const _VlanDialog({required this.vlans});
+  final Map<int, String> vlans;
+
+  @override
+  State<_VlanDialog> createState() => _VlanDialogState();
+}
+
+class _VlanDialogState extends State<_VlanDialog> {
+  final _manual = TextEditingController();
+  int? _selected;
+
+  @override
+  void dispose() {
+    _manual.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasList = widget.vlans.isNotEmpty;
+    return AlertDialog(
+      title: const Text('Ubah VLAN'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: hasList
+            ? ListView(
+                shrinkWrap: true,
+                children: widget.vlans.entries
+                    .map((e) => ListTile(
+                          dense: true,
+                          title: Text(e.value.isEmpty ? '${e.key}' : e.value),
+                          subtitle: e.value.isEmpty ? null : Text('VLAN ${e.key}'),
+                          selected: _selected == e.key,
+                          trailing: _selected == e.key ? const Icon(Icons.check) : null,
+                          onTap: () => setState(() => _selected = e.key),
+                        ))
+                    .toList())
+            : TextField(
+                controller: _manual,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'VLAN (daftar OLT tidak tersedia)')),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, hasList ? _selected : int.tryParse(_manual.text.trim())),
+            child: const Text('Lanjut')),
+      ],
+    );
+  }
 }

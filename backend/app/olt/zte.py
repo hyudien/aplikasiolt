@@ -151,6 +151,135 @@ class ZteC320Adapter(OltAdapter):
         return {"success": True, "message": f"Paket diubah ke {profile}", "profile": profile,
                 "upstream": upstream, "downstream": downstream}
 
+    async def change_pppoe(self, interface: str, username: str, password: str) -> dict:
+        """Ubah username/password PPPoE pada wan-ip yang sudah ada (indeks diambil dari konfigurasi ONU)."""
+        commands.validate_interface(interface)
+        mng = await self.execute(commands.show_onu_mng(interface))
+        match = re.search(r"\bwan-ip[ \t]+(\d+)[ \t]+mode[ \t]+pppoe\b", mng)
+        index = int(match.group(1)) if match else 1
+        command = commands.set_pppoe(index, username, password)
+        sequence = ["configure terminal", commands.REMOTE_MANAGEMENT.format(interface=interface), command]
+        failure = None
+        try:
+            for item in sequence:
+                output = await self.execute(item)
+                if parsers.CLI_ERROR.search(output.replace(item, "")):
+                    failure = (output.replace(password, "***").strip().splitlines()[-2:-1]
+                               or [output.replace(password, "***").strip()])
+                    break
+        finally:
+            for item in ("exit", "exit"):
+                try:
+                    await self.execute(item)
+                except Exception:
+                    break
+        if failure is not None:
+            raise RuntimeError("OLT menolak perintah PPPoE: " + failure[0][:120])
+        await self.execute(commands.SAVE_CONFIG)
+        return {"success": True, "message": f"PPPoE diubah ke {username}", "pppoe_user": username}
+
+    async def change_vlan(self, interface: str, vlan: int) -> dict:
+        """Ubah VLAN pada service-port (interface ONU) dan service (pon-onu-mng) yang sudah ada."""
+        commands.validate_interface(interface)
+        running = await self.execute(commands.show_onu_running(interface))
+        mng = await self.execute(commands.show_onu_mng(interface))
+        ports = [commands.set_service_port_vlan(int(m[0]), int(m[1]), vlan) for m in re.findall(
+            r"^[ \t]*service-port[ \t]+(\d+)[ \t]+vport[ \t]+(\d+)\b", running, re.MULTILINE)]
+        services = [commands.set_service_vlan(m[0], int(m[1]), vlan) for m in re.findall(
+            r"^[ \t]*service[ \t]+(\S+)[ \t]+gemport[ \t]+(\d+)[ \t]+vlan[ \t]+\d+", mng, re.MULTILINE)]
+        if not ports and not services:
+            raise RuntimeError("Service-port/service ONU tidak ditemukan di konfigurasi OLT")
+        sequence = ["configure terminal"]
+        if ports:
+            sequence += [commands.ONU_INTERFACE.format(interface=interface), *ports, "exit"]
+        if services:
+            sequence += [commands.REMOTE_MANAGEMENT.format(interface=interface), *services, "exit"]
+        failure = None
+        try:
+            for command in sequence:
+                output = await self.execute(command)
+                if parsers.CLI_ERROR.search(output.replace(command, "")):
+                    failure = output.strip().splitlines()[-2:-1] or [output.strip()]
+                    break
+        finally:
+            for command in ("exit",):
+                try:
+                    await self.execute(command)
+                except Exception:
+                    break
+        if failure is not None:
+            raise RuntimeError("OLT menolak perintah VLAN: " + failure[0][:120])
+        await self.execute(commands.SAVE_CONFIG)
+        return {"success": True, "message": f"VLAN diubah ke {vlan}", "vlan": vlan}
+
+    async def register_ont(self, pon: str, serial: str, name: str, vlan: int, profile: str, mode: str,
+                           pppoe_user: str = "", pppoe_password: str = "", vlan_profile: str = "",
+                           onu_type: str = "ZTE-F660") -> dict:
+        """Daftarkan ONU baru: ONU ID kosong dibaca langsung dari OLT, rollback (`no onu`) bila konfigurasi gagal."""
+        output = await self.execute(commands.SHOW_ONU_INFORMATION.format(pon=pon))
+        used = {item["onu_id"] for item in parsers.parse_onu_information(output)}
+        onu_id = next((n for n in range(1, 129) if n not in used), None)
+        if onu_id is None:
+            raise RuntimeError("PON penuh")
+        interface = f"{pon}:{onu_id}"
+        register = commands.register_onu(pon, onu_id, onu_type, serial)
+        provision = commands.provision_onu(interface, name, profile, vlan, mode, pppoe_user,
+                                           pppoe_password, vlan_profile)
+        secrets = [pppoe_password] if pppoe_password else []
+
+        def redact(text: str) -> str:
+            for secret in secrets:
+                text = text.replace(secret, "***")
+            return text
+
+        async def run(sequence: list[str]) -> str | None:
+            for command in sequence:
+                result = await self.execute(command)
+                if parsers.CLI_ERROR.search(result.replace(command, "")):
+                    lines = redact(result).strip().splitlines()
+                    return (lines[-2:-1] or lines or [""])[0][:120]
+            return None
+
+        failure = None
+        try:
+            failure = await run(register)
+            if failure is None:
+                failure = await run(provision)
+        finally:
+            for command in ("exit", "exit"):
+                try:
+                    await self.execute(command)
+                except Exception:
+                    break
+        if failure is not None:
+            try:
+                await run(commands.delete_onu(pon, onu_id))
+                for command in ("exit", "exit"):
+                    await self.execute(command)
+            except Exception:
+                pass
+            raise RuntimeError("OLT menolak perintah registrasi: " + failure)
+        await self.execute(commands.SAVE_CONFIG)
+        return {"onu_id": onu_id, "interface": interface}
+
+    async def vlan_profiles_list(self) -> list[dict]:
+        """Profile VLAN (nama persis + CVLAN) dari OLT; kosong bila tidak terbaca."""
+        try:
+            return parsers.parse_vlan_profiles(await self.execute(commands.SHOW_VLANS[0]))
+        except Exception:
+            return []
+
+    async def vlans_list(self) -> list[int]:
+        """Daftar VLAN yang terdaftar di OLT (kosong bila tidak terbaca)."""
+        for command in commands.SHOW_VLANS:
+            try:
+                vlans = parsers.parse_vlan_list(await self.execute(command))
+            except Exception:
+                continue
+            if vlans:
+                return vlans
+        return []
+
     async def traffic_profiles_list(self) -> list[str]:
         """Daftar traffic profile (untuk gemport upstream/downstream) yang ada di OLT."""
         for command in commands.SHOW_TRAFFIC_PROFILES:
@@ -163,7 +292,14 @@ class ZteC320Adapter(OltAdapter):
         return []
 
     async def unconfigured(self) -> list[dict]:
-        return parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
+        found = parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED))
+        if found:
+            return found
+        try:
+            found = parsers.parse_unconfigured(await self.execute(commands.SHOW_UNCONFIGURED_ALT[0]))
+        except Exception:
+            found = []
+        return found
 
     async def profiles_list(self) -> list[str]:
         """Daftar T-CONT profile yang ada di OLT (tidak gagal bila perintah tidak didukung)."""

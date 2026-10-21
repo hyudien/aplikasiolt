@@ -41,7 +41,7 @@ Contoh hasil tes: `{ "connected": true, "reason": null }`, atau `connected: fals
 | POST | `/api/onts/register` | Registrasi berdasarkan PON dan SN yang terdeteksi |
 | POST | `/api/onts/{interface}/actions/{action}` | Aksi pada ONT |
 
-Body registrasi: `pon`, `serial`, `name`, `vlan`, `profile`, `pppoe_user`, `pppoe_password`, `mode` (`pppoe`, `bridge`, `hybrid`). Username/password PPPoE wajib pada mode PPPoE/Hybrid. Backend menolak SN dan username PPPoE duplikat serta memilih ONU ID kosong.
+Body registrasi: `pon`, `serial`, `name`, `vlan`, `profile`, `pppoe_user`, `pppoe_password`, `mode` (`pppoe`, `bridge`, `hybrid`). Opsional: `vlan_profile` (nama profile VLAN persis dari `GET /api/vlans`, dipakai pada `wan-ip … vlan-profile`) dan `onu_type` (default env `DEFAULT_ONU_TYPE`, lalu `ZTE-F660`). Pada OLT nyata, ONU ID kosong dibaca langsung dari OLT, konfigurasi dirollback (`no onu`) bila gagal, dan `write` dijalankan otomatis. Username/password PPPoE wajib pada mode PPPoE/Hybrid. Backend menolak SN dan username PPPoE duplikat serta memilih ONU ID kosong.
 
 Aksi yang dikenal: `delete`, `attenuation`, `change-package`, `change-vlan`, `change-pppoe`, `replace`, `remote-on`, `remote-off`, `reboot`. Aksi `delete`, `replace`, dan `reboot` wajib membawa `"confirm": true`. Data tambahan: `profile`, `vlan`, `username`, `password`, atau `serial` sesuai aksi. Nilai diperiksa untuk mencegah karakter CLI berbahaya.
 

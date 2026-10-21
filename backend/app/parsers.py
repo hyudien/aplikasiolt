@@ -19,7 +19,8 @@ _INFO_STATE = re.compile(
 _SERIAL = re.compile(r"^(?:SN:)?(?P<serial>[A-Za-z0-9]{8,16})(?:\(.*\))?$")
 _FULL_SN = re.compile(r"\bSN\(([A-Za-z0-9]{8,16})\)")
 _UNCFIG_ROW = re.compile(
-    r"^\s*(?P<interface>\d+/\d+/\d+)\s+(?P<serial>[A-Za-z0-9]{8,16})\s*$",
+    r"^\s*(?:gpon[-_](?:onu|olt)_)?(?P<interface>\d+/\d+/\d+)(?::\d+)?\s+"
+    r"(?:\S+\s+)??(?:SN:?\s*)?(?P<serial>[A-Za-z0-9]{8,16})(?:\s+\S+)*\s*$",
     re.IGNORECASE,
 )
 _ONU_ID = re.compile(r"(?P<pon>\d+/\d+/\d+):(?P<onu_id>\d+)")
@@ -91,7 +92,7 @@ def parse_onu_information(output: str) -> list[dict]:
 
 def parse_unconfigured(output: str) -> list[dict]:
     result = []
-    for line in output.splitlines():
+    for line in clean_cli(output).splitlines():
         match = _UNCFIG_ROW.match(line)
         if match:
             result.append({"pon": match.group("interface"), "serial": match.group("serial").upper()})
@@ -230,3 +231,45 @@ def parse_onu_mng_config(output: str) -> dict:
     if m := re.search(r"\bservice[ \t]+\S+[ \t]+gemport[ \t]+\d+[ \t]+vlan[ \t]+(\d+)", output):
         result["vlan"] = int(m.group(1))
     return result
+
+
+def parse_vlan_list(output: str) -> list[int]:
+    """VLAN terdaftar dari `show vlan brief`: baris `100 name ...` atau daftar `1,100-105`."""
+    found: set[int] = set()
+    for raw in clean_cli(output).splitlines():
+        line = raw.strip()
+        if m := re.fullmatch(r"CVLAN[ \t]*:[ \t]*(\d{1,4})", line, re.IGNORECASE):
+            if 1 <= int(m.group(1)) <= 4094:
+                found.add(int(m.group(1)))
+        elif re.fullmatch(r"(?:vlan[ \t]*(?:list)?[ \t]*:?[ \t]*)?\d+(?:-\d+)?(?:[ \t]*,[ \t]*\d+(?:-\d+)?)*", line, re.IGNORECASE) \
+                or re.match(r"vlan[ \t]*(?:list)?[ \t]*:", line, re.IGNORECASE):
+            for a, b in re.findall(r"(\d+)(?:-(\d+))?", line.split(":", 1)[-1] if ":" in line else line):
+                lo, hi = int(a), int(b or a)
+                if 1 <= lo <= hi <= 4094 and hi - lo < 4094:
+                    found.update(range(lo, hi + 1))
+        elif (m := re.match(r"(\d{1,4})[ \t]+\S", line)) and 1 <= int(m.group(1)) <= 4094:
+            found.add(int(m.group(1)))
+    return sorted(found)
+
+
+def parse_vlan_profiles(output: str) -> list[dict]:
+    """Blok `show gpon onu profile vlan`: nama profile persis seperti di OLT (mis. `vlan-KWL(150)`, `TEST_177`) + CVLAN."""
+    profiles: list[dict] = []
+    name = None
+    for raw in clean_cli(output).splitlines():
+        line = raw.strip()
+        if m := re.match(r"Profile[ \t]+name[ \t]*:[ \t]*(\S.*?)\s*$", line, re.IGNORECASE):
+            name = m.group(1)
+        elif name and (m := re.match(r"CVLAN[ \t]*:[ \t]*(\d{1,4})\s*$", line, re.IGNORECASE)):
+            if 1 <= int(m.group(1)) <= 4094 and all(p["name"] != name for p in profiles):
+                profiles.append({"name": name, "vlan": int(m.group(1))})
+            name = None
+    return profiles
+
+
+_CONTROL_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def clean_cli(output: str) -> str:
+    """Buang escape ANSI, backspace, dan karakter kontrol sisa paginasi `--More--`."""
+    return _CONTROL_RE.sub("", output.replace("\r\n", "\n").replace("\r", "\n"))

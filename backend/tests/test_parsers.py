@@ -179,3 +179,201 @@ ONU         SN report      ONU ID Auth configuration State              times
     result = parse_onu_information(output)
     assert [o["serial"] for o in result] == ["HWTC070D11FF", "ZTEGD4A45D7D", "ZTEGD16500C0"]
     assert [o["status"] for o in result] == ["los", "online", "online"]
+
+
+def test_set_pppoe_validation():
+    import pytest
+    from app import commands
+    assert commands.set_pppoe(1, "user@isp", "p4ss") == "wan-ip 1 mode pppoe username user@isp password p4ss"
+    for user, pw in (("bad user", "x"), ("u", "has space"), ("u", ""), ("", "x")):
+        with pytest.raises(ValueError):
+            commands.set_pppoe(1, user, pw)
+
+
+def test_zte_change_pppoe_sequence_and_redaction():
+    import asyncio
+    import pytest
+    from app.olt.zte import ZteC320Adapter
+
+    class Fake(ZteC320Adapter):
+        def __init__(self, reject=False):
+            super().__init__("h", 23, "u", "p")
+            self.sent, self.reject = [], reject
+
+        async def execute(self, command):
+            self.sent.append(command)
+            if command.startswith("show onu running"):
+                return "wan-ip 2 mode pppoe username old\nZXAN#"
+            if self.reject and command.startswith("wan-ip"):
+                return command + "\n%Error 20201: Invalid input secretpw\nZXAN#"
+            return "ok\nZXAN#"
+
+    fake = Fake()
+    asyncio.run(fake.change_pppoe("1/1/1:2", "new", "secretpw"))
+    assert "wan-ip 2 mode pppoe username new password secretpw" in fake.sent
+    assert fake.sent[-1] == "write"
+    fake = Fake(reject=True)
+    with pytest.raises(RuntimeError) as exc:
+        asyncio.run(fake.change_pppoe("1/1/1:2", "new", "secretpw"))
+    assert "secretpw" not in str(exc.value)
+    assert "write" not in fake.sent
+
+
+def test_zte_change_vlan_sequence():
+    import asyncio
+    import pytest
+    from app.olt.zte import ZteC320Adapter
+
+    class Fake(ZteC320Adapter):
+        def __init__(self, reject=False):
+            super().__init__("h", 23, "u", "p")
+            self.sent, self.reject = [], reject
+
+        async def execute(self, command):
+            self.sent.append(command)
+            if command.startswith("show running"):
+                return RUNNING_SAMPLE
+            if command.startswith("show onu running"):
+                return MNG_SAMPLE
+            if self.reject and command.startswith("service-port"):
+                return "%Error: Invalid input\nZXAN#"
+            return "ok\nZXAN#"
+
+    fake = Fake()
+    result = asyncio.run(fake.change_vlan("1/1/1:1", 200))
+    assert result["vlan"] == 200
+    assert "service-port 1 vport 1 user-vlan 200 vlan 200" in fake.sent
+    assert "service ServiceName gemport 1 vlan 200" in fake.sent
+    assert fake.sent[-1] == "write"
+    fake = Fake(reject=True)
+    with pytest.raises(RuntimeError):
+        asyncio.run(fake.change_vlan("1/1/1:1", 200))
+    assert "write" not in fake.sent
+
+
+def test_parse_vlan_list():
+    from app.parsers import parse_vlan_list
+    out = "VLAN Name Status\n1 default active\n177 TEST_177 active\nVlan list: 200-202,300\nZXAN#"
+    assert parse_vlan_list(out) == [1, 177, 200, 201, 202, 300]
+    assert parse_vlan_list("no vlan") == []
+
+
+def test_parse_vlan_list_from_running_config():
+    from app.parsers import parse_vlan_list
+    out = "hostname ZXAN\nvlan 100,177\nvlan 200-201\ninterface vlan 100\nZXAN#"
+    assert parse_vlan_list(out) == [100, 177, 200, 201]
+
+
+def test_parse_vlan_list_from_onu_profile_vlan():
+    from app.parsers import parse_vlan_list
+    out = """ZXAN#show gpon onu profile vlan
+Profile name:  vlan-KWL(150)
+Tag mode:      tag
+CVLAN:         150
+CVLAN priority:0
+
+Profile name:  vlan-TJS(151)
+Tag mode:      tag
+CVLAN:         151
+CVLAN priority:0
+"""
+    assert parse_vlan_list(out) == [150, 151]
+
+
+def test_parse_vlan_profiles_keeps_exact_names():
+    from app.parsers import parse_vlan_profiles
+    out = """ZXAN#show gpon onu profile vlan
+Profile name:  vlan-KWL(150)
+Tag mode:      tag
+CVLAN:         150
+CVLAN priority:0
+
+Profile name:  TEST_177
+Tag mode:      tag
+CVLAN:         177
+"""
+    assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "TEST_177", "vlan": 177}]
+
+
+def test_vlan_parsers_tolerate_pagination_control_chars():
+    from app.parsers import parse_vlan_list, parse_vlan_profiles
+    out = ("Profile name:  vlan-KWL(150)\r\nCVLAN:         150\r\n\r\n"
+           "\x08\x08\x08\x08        \x08\x08\x08\x08Profile name:  vlan-TJS(151)\r\n"
+           "\x1b[1DCVLAN:         151\r\nCVLAN priority:0\r\n")
+    assert parse_vlan_profiles(out) == [{"name": "vlan-KWL(150)", "vlan": 150}, {"name": "vlan-TJS(151)", "vlan": 151}]
+    assert parse_vlan_list(out) == [150, 151]
+
+
+class _FakeRegisterAdapter:
+    def make(self, reject_on=None):
+        from app.olt.zte import ZteC320Adapter
+
+        class Fake(ZteC320Adapter):
+            def __init__(self):
+                super().__init__("h", 23, "u", "p")
+                self.sent = []
+
+            async def execute(self, command):
+                self.sent.append(command)
+                if command.startswith("show pon onu information"):
+                    return ("OnuIndex Name Type Mode Auth State\n"
+                            "1/1/1:1 ZTEGC0000001 1 1 enable success working 0\nZXAN#")
+                if reject_on and command.startswith(reject_on):
+                    return command + "\n%Error 20201: Invalid input secretpw\nZXAN#"
+                return "ok\nZXAN#"
+
+        return Fake()
+
+
+def test_zte_register_ont_sequence():
+    import asyncio
+    fake = _FakeRegisterAdapter().make()
+    result = asyncio.run(fake.register_ont("1/1/1", "ZTEGD1DF751A", "REPZA", 177, "20Mbps", "pppoe",
+                                           "u@nombes.net", "secretpw", "TEST_177"))
+    assert result == {"onu_id": 2, "interface": "1/1/1:2"}
+    sent = fake.sent
+    assert "onu 2 type ZTE-F660 sn ZTEGD1DF751A" in sent
+    assert "interface gpon-onu_1/1/1:2" in sent
+    assert "tcont 1 name PPP profile 20Mbps" in sent
+    assert "service-port 1 vport 1 user-vlan 177 vlan 177" in sent
+    assert "wan-ip 1 mode pppoe username u@nombes.net password secretpw vlan-profile TEST_177 host 1" in sent
+    assert sent[-1] == "write"
+
+
+def test_zte_register_ont_rollback_and_redaction():
+    import asyncio
+    import pytest
+    fake = _FakeRegisterAdapter().make(reject_on="wan-ip")
+    with pytest.raises(RuntimeError) as exc:
+        asyncio.run(fake.register_ont("1/1/1", "ZTEGD1DF751A", "REPZA", 177, "20Mbps", "pppoe",
+                                      "u", "secretpw"))
+    assert "secretpw" not in str(exc.value)
+    assert "no onu 2" in fake.sent
+    assert "write" not in fake.sent
+
+
+def test_provision_onu_validation_and_bridge():
+    import pytest
+    from app import commands
+    seq = commands.provision_onu("1/1/1:2", "Nama", "20M", 177, "bridge")
+    assert not any(c.startswith("wan-ip") for c in seq)
+    for kwargs in ({"vlan": 0}, {"profile": "bad profile"}, {"name": "a;b"}):
+        args = {"name": "N", "profile": "20M", "vlan": 100, **kwargs}
+        with pytest.raises(ValueError):
+            commands.provision_onu("1/1/1:2", args["name"], args["profile"], args["vlan"], "bridge")
+    with pytest.raises(ValueError):
+        commands.provision_onu("1/1/1:2", "N", "20M", 100, "pppoe", "u", "p", "bad;profile")
+
+
+def test_parse_unconfigured_zte_c320_formats():
+    out = """ZXAN#show gpon onu uncfg
+OnuIndex                 Sn                  State
+---------------------------------------------------------------------
+gpon-onu_1/1/1:1         ZTEGD1DF751A        unknown
+gpon-onu_1/1/2:3         ZTEGC0000009        unknown
+ZXAN#"""
+    assert parse_unconfigured(out) == [{"pon": "1/1/1", "serial": "ZTEGD1DF751A"},
+                                       {"pon": "1/1/2", "serial": "ZTEGC0000009"}]
+    assert parse_unconfigured("No related information to show.\nZXAN#") == []
+    assert parse_unconfigured("OltIndex Model SN\ngpon-olt_1/1/1 ZTE-F660 ZTEGC0000001") == [
+        {"pon": "1/1/1", "serial": "ZTEGC0000001"}]

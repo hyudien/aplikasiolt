@@ -40,6 +40,6 @@ Tes backend: `cd backend && python -m pytest`.
 
 **Uji seluruh alur dengan `OLT_MODE=mock` terlebih dahulu.** Jangan jalankan perintah tulis pada OLT produksi sebelum setiap sintaks diuji dengan cermat di lab/perangkat yang sesuai. Selalu simpan backup konfigurasi OLT. Sintaks CLI dapat berbeda menurut firmware dan kartu; pemilik instalasi wajib memeriksa `show version-running`, termasuk ZTE C320 V2.1.0 dengan kartu GTGOG dan SMXA.
 
-Adapter Telnet read-only belum mengaktifkan perintah perubahan nyata secara default. Tindakan tulis pada OLT nyata akan ditolak sampai template CLI di `backend/app/commands.py` diverifikasi dan implementasinya disesuaikan untuk firmware setempat.
+Perubahan paket dan PPPoE (`change-pppoe`, password tidak pernah di-log/dikembalikan) sudah aktif pada OLT nyata; verifikasi sintaks pada lab terlebih dahulu. Tindakan tulis lainnya pada OLT nyata akan ditolak sampai template CLI di `backend/app/commands.py` diverifikasi dan implementasinya disesuaikan untuk firmware setempat.
 
 HTTP cleartext hanya disediakan untuk LAN tepercaya. Jangan membuka backend langsung ke internet; gunakan HTTPS atau VPN seperti Tailscale/WireGuard untuk akses dari luar jaringan.
