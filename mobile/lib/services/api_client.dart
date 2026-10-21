@@ -64,6 +64,15 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// Profile VLAN dari OLT: `/api/vlans`, dengan cadangan `/api/profiles` untuk server yang belum diperbarui.
+  Future<Map<String, dynamic>> vlanData() async {
+    try {
+      return await get('/api/vlans') as Map<String, dynamic>;
+    } catch (_) {
+      return await get('/api/profiles') as Map<String, dynamic>;
+    }
+  }
+
   dynamic _decode(http.Response response) {
     dynamic value;
     try {

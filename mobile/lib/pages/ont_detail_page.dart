@@ -108,7 +108,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
       final Map<int, String> vlans = {};
       String? vlanError;
       try {
-        final data = await ApiClient.instance.get('/api/vlans') as Map<String, dynamic>;
+        final data = await ApiClient.instance.vlanData();
         for (final item in (data['vlan_profiles'] as List<dynamic>? ?? [])) {
           final vlan = int.tryParse('${(item as Map)['vlan']}') ?? 0;
           if (vlan > 0) vlans[vlan] = item['name'].toString();

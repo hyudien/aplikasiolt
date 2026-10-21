@@ -13,6 +13,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
   List<String> _profiles = [];
   List<Map<String, dynamic>> _vlanProfiles = [];
   String _vlanProfile = '';
+  String? _vlanError;
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _selected;
@@ -46,10 +47,10 @@ class _RegistrationPageState extends State<RegistrationPage> {
         _profile = _profiles.isEmpty ? '' : _profiles.first;
       });
       try {
-        final vlanData = await ApiClient.instance.get('/api/vlans') as Map<String, dynamic>;
+        final vlanData = await ApiClient.instance.vlanData();
         setState(() => _vlanProfiles = (vlanData['vlan_profiles'] as List<dynamic>? ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList());
-      } catch (_) {
-        // Daftar VLAN opsional: bila gagal, VLAN diisi manual.
+      } catch (error) {
+        setState(() => _vlanError = error.toString());
       }
     } catch (error) {
       setState(() => _error = error.toString());
@@ -168,7 +169,15 @@ class _RegistrationPageState extends State<RegistrationPage> {
           }),
         )
       else
-        TextField(controller: _vlan, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'VLAN')),
+        TextField(
+          controller: _vlan,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'VLAN',
+            helperText: _vlanError == null ? 'Daftar VLAN OLT kosong, isi manual.' : 'Daftar VLAN gagal dimuat: $_vlanError',
+            helperMaxLines: 3,
+          ),
+        ),
       const SizedBox(height: 12),
       DropdownButtonFormField<String>(
         initialValue: _profiles.contains(_profile) ? _profile : null,
