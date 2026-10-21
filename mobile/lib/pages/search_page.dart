@@ -10,6 +10,23 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
+  Map<int, String> _vlanNames = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ApiClient.instance.vlanNames().then((names) {
+      if (mounted) setState(() => _vlanNames = names);
+    });
+  }
+
+  String _vlanLabel(dynamic vlan) {
+    final number = int.tryParse('$vlan');
+    if (number == null) return '-';
+    final name = _vlanNames[number];
+    return name == null ? '$number' : name;
+  }
+
   final _query = TextEditingController();
   List<dynamic> _results = [];
   bool _loading = false;
@@ -62,7 +79,7 @@ class _SearchPageState extends State<SearchPage> {
                       return Card(
                         child: ListTile(
                           title: Text((ont['name']?.toString().isNotEmpty ?? false) ? ont['name'].toString() : ont['serial'].toString()),
-                          subtitle: Text('${ont['serial']} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${ont['vlan'] ?? '-'} • PON ${ont['pon']}'),
+                          subtitle: Text('${ont['serial']} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${_vlanLabel(ont['vlan'])} • PON ${ont['pon']}'),
                           isThreeLine: true,
                           trailing: _StatusBadge(status: ont['status']?.toString() ?? 'offline'),
                           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OntDetailPage(interface: ont['interface'].toString()))),

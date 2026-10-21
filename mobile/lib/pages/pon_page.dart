@@ -11,6 +11,23 @@ class PonPage extends StatefulWidget {
 }
 
 class _PonPageState extends State<PonPage> {
+  Map<int, String> _vlanNames = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ApiClient.instance.vlanNames().then((names) {
+      if (mounted) setState(() => _vlanNames = names);
+    });
+  }
+
+  String _vlanLabel(dynamic vlan) {
+    final number = int.tryParse('$vlan');
+    if (number == null) return '-';
+    final name = _vlanNames[number];
+    return name == null ? '$number' : name;
+  }
+
   String _filter = 'Semua';
   String _query = '';
 
@@ -56,7 +73,7 @@ class _PonPageState extends State<PonPage> {
                           return ListTile(
                             leading: CircleAvatar(child: Text('${ont['onu_id'] ?? '-'}')),
                             title: Text((ont['name']?.toString().isNotEmpty ?? false) ? ont['name'].toString() : ont['serial'].toString()),
-                            subtitle: Text('${ont['serial']} • ${ont['reason'] ?? ont['status']}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${ont['vlan'] ?? '-'} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}'),
+                            subtitle: Text('${ont['serial']} • ${ont['reason'] ?? ont['status']}\nPaket: ${(ont['profile']?.toString().isNotEmpty ?? false) ? ont['profile'] : '-'} • VLAN: ${_vlanLabel(ont['vlan'])} • PPPoE: ${(ont['pppoe_user']?.toString().isNotEmpty ?? false) ? ont['pppoe_user'] : '-'}'),
                             isThreeLine: true,
                             trailing: Text(ont['status'].toString().toUpperCase()),
                             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OntDetailPage(interface: ont['interface'].toString()))),

@@ -10,6 +10,23 @@ class OntDetailPage extends StatefulWidget {
 }
 
 class _OntDetailPageState extends State<OntDetailPage> {
+  Map<int, String> _vlanNames = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ApiClient.instance.vlanNames().then((names) {
+      if (mounted) setState(() => _vlanNames = names);
+    });
+  }
+
+  String _vlanLabel(dynamic vlan) {
+    final number = int.tryParse('$vlan');
+    if (number == null) return '-';
+    final name = _vlanNames[number];
+    return name == null ? '$number' : name;
+  }
+
   bool _busy = false;
 
   Future<void> _action(String action, {bool confirm = false, String? field, String? label}) async {
@@ -204,7 +221,7 @@ class _OntDetailPageState extends State<OntDetailPage> {
                 const SizedBox(height: 12),
                 _info('SN', ont['serial']), _info('PON / ONU ID', '${ont['pon']} / ${ont['onu_id']}'),
                 _info('Status', '${ont['status']} (${ont['reason'] ?? '-'})'),
-                _info('PPPoE', ont['pppoe_user'] ?? '-'), _info('VLAN / Paket', '${ont['vlan'] ?? '-'} / ${ont['profile'] ?? '-'}'),
+                _info('PPPoE', ont['pppoe_user'] ?? '-'), _info('VLAN / Paket', '${_vlanLabel(ont['vlan'])} / ${ont['profile'] ?? '-'}'),
                 _info('Mode', ont['mode'] ?? '-'), _info('Daya optik', ont['optical_power'] ?? 'Belum tersedia'),
               ]))),
               if (_busy) const LinearProgressIndicator(),

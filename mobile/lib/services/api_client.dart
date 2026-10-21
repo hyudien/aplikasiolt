@@ -73,6 +73,25 @@ class ApiClient {
     }
   }
 
+  Map<int, String>? _vlanNames;
+
+  /// Peta nomor VLAN -> nama profile OLT (di-cache; kosong bila daftar tidak tersedia).
+  Future<Map<int, String>> vlanNames({bool refresh = false}) async {
+    if (!refresh && _vlanNames != null) return _vlanNames!;
+    final names = <int, String>{};
+    try {
+      final data = await vlanData();
+      for (final item in (data['vlan_profiles'] as List<dynamic>? ?? [])) {
+        final vlan = int.tryParse('${(item as Map)['vlan']}') ?? 0;
+        if (vlan > 0) names[vlan] = item['name'].toString();
+      }
+      _vlanNames = names;
+    } catch (_) {
+      return names;
+    }
+    return names;
+  }
+
   dynamic _decode(http.Response response) {
     dynamic value;
     try {
